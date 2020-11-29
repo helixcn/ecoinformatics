@@ -1,0 +1,183 @@
+---
+title: "tmaps手工调整采样点地图的图例"
+author: "Jinlong Zhang"
+date: "11/28/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+tmap是用来绘制地图的R程序包，作者是荷兰统计学家Martijn Tennekes (https://github.com/mtennekes/tmap)。tmap结合sf、sp等程序包，绘制设色地图、点分布图、栅格图等十分方便，本公众号以前也有介绍。
+
+不过，tmap在绘制复杂的采样点分布图时，默认的图例往往不太理想。tmap用点的形状、颜色分别表示采样点的类型（如森林、湿地、草原），用大小表示数量（物种丰富度等），此时，形状、颜色和大小三个维度是分开的，图例也默认相应分开，而这并不是用户想要的，因此需要对代码进行修改。
+
+本文给出一些示例代码，主要参考Xu S. et al. (2020)论文和附件。相应数据和代码可在 https://github.com/helixcn/ecoinformatics 下载。
+
+## 读取数据
+
+图中需要有指北针和比例尺，要求用蓝色实心三角，表示森林（forest）；绿色实心圆点，表示草地（grassland）；藕荷色实心菱形，表示湿地（wetland）。
+
+```{R}
+setwd("/Users/jinlong/Documents/github/ecoinformatics/2020-11-29_tmap/")
+library(tmap)
+library(tmaptools)
+library(sf)
+library(sp)
+library(openxlsx)
+
+rm(list = ls()) # 删除工作空间中原来的对象
+
+sites <- read.xlsx("rspb20202063_si_002.xlsx")
+head(sites)
+
+sites$Longitude <- as.numeric(sites$Longitude) # 某些Longitude或者Latitude记录可能为空，不能识别为numeric类型，因此先要用as.numeric转换。
+sites$Latitude <- as.numeric(sites$Latitude)
+
+sites <- sites[!(is.na(sites$Longitude)|is.na(sites$Latitude)),] # 去掉Longitude和latitude为NA的记录
+
+# 建立spatial data.frame
+coordinates(sites) <- ~Longitude+Latitude
+proj4string(sites) <- CRS("+proj=longlat +datum=WGS84") # 设定WGS84投影
+
+head(sites)
+world <- read_sf("world20200121_polygon.shp") #读取shape文件（注意：本图为多边形，没有九段线）
+st_crs(world) <- 4326 # 确定WGS84投影
+```
+
+## 绘制采样点分布图
+
+默认情况下，地图的图例有三种，分别按照颜色、形状和大小给出。
+```{R}
+## 01
+map01 <- tm_shape(world) +
+    tm_borders("grey60", lwd = 1) + # 国界线为灰色
+    tm_shape(sites) +
+    tm_symbols(shape= "Ecosystem", 
+        alpha = 1,
+        col = "Ecosystem", # 点的颜色按照Ecosystem显示
+        border.lwd = 2,
+        palette = c("blue", "seagreen4", "magenta2"), # 指定三种颜色
+        shapes = c(17, 19, 18), # 点的形状按照Ecosystem显示，分别为17、19、18
+        size = 0.3,
+        labels = c("forest", "grassland", "wetland"), # 点的名称设定为forest、grassland、wetland
+        title.col = "Ecosystem", # 图例名称为Ecosystem
+        legend.col.show = TRUE,  # 在图例中显示颜色
+        legend.shape.show = TRUE) + # 在图例中显示形状
+    tm_scale_bar(breaks = c(0, 2500, 5000, 10000), # 比例尺
+        position=c(0.60, 0.0), # 比例尺在地图中的位置
+        text.size = 1) +
+    tm_compass(type = "4star", # 指北针类型
+        position=c("right", "top"), # 指北针位置
+        size = 2.5) + # 指北针大小
+    tm_layout(inner.margins=c(0.12,0.03,0.08,0.03), # 地图边缘的大小
+        legend.stack = "horizontal", # 图例排列
+        fontfamily = "FreeSerif") +  # Times New Roman （MacOS）
+    tm_legend(position=c(0.05, 0.20), # 图例放在图左下角
+        legend.text.size = 0.8,
+        legend.title.size = 1.2) +
+    tm_add_legend(
+        type = "symbol",
+        title = "Ecosystem" # 图例标题
+    )
+
+map01
+
+## 8inches by 5 inches, 600dpi
+# jpeg("map01.jpeg", width = 8*600, height = 5*600, res = 600)
+# map01
+# dev.off()
+```
+
+## 更改图例后的地图
+
+用tm_add_legend手工调整：
+
+```R
+tm_add_legend(
+    type = "symbol",
+    labels = c("grassland", "forest", "wetland"),
+    col = c("seagreen4", "blue", "magenta2"),
+    shape = c(19, 17, 18),
+    title = "Ecosystem"
+)
+```
+
+更改后的代码：
+```{R}
+# 02
+map02 <- tm_shape(world) +
+    tm_borders("grey60", lwd = 1) +
+    tm_shape(sites) +
+    tm_symbols(shape= "Ecosystem",
+        alpha = 1,
+        col = "Ecosystem",
+        border.lwd = 2,
+        palette = c("blue", "seagreen4", "magenta2"),
+        shapes = c(17, 19, 18),
+        size = 0.3,
+        labels = c("forest", "grassland", "wetland"),
+        title.col = "Ecosystem",
+        legend.col.show = FALSE,
+        legend.shape.show = FALSE) +
+    tm_scale_bar(breaks = c(0, 2500, 5000, 10000),
+        position=c(0.60, 0.0),
+        text.size = 1) +
+    tm_compass(type = "4star",
+        position=c("right", "top"),
+        size = 2.5) +
+    tm_layout(inner.margins=c(0.12,0.03,0.08,0.03),
+        legend.stack = "horizontal",
+        fontfamily = "serif") +
+    tm_legend(position=c(0.05, 0.20),
+        legend.text.size = 0.8,
+        legend.title.size = 1.2) +
+    tm_add_legend(
+        type = "symbol",
+        labels = c("grassland", "forest", "wetland"), # 图例的标签
+        col = c("seagreen4", "blue", "magenta2"), # 图例颜色
+        shape = c(19, 17, 18), # 图例
+        title = "Ecosystem"
+    )
+
+
+map02
+
+## 8inches by 5 inches, 600dpi
+# jpeg("map02.jpeg", width = 8*600, height = 5*600, res = 600)
+# map02
+# dev.off()
+```
+
+## 附：绘制欧洲部分的地图
+```{R}
+# 03
+map03 <- tm_shape(world,
+        xlim = c(-15, 40), # 经度范围
+        ylim = c(35, 70)) + # 纬度范围
+    tm_borders("grey60", lwd = 1) +
+    tm_shape(sites) +
+    tm_symbols(shape= "Ecosystem",
+        col = "Ecosystem",
+        palette = c("blue", "seagreen4", "magenta2"),
+        size = 0.2,
+        shapes = c(17, 19, 18),
+        border.lwd = 1.8) +
+    tm_scale_bar(position = c("left", "top")) +
+    tm_layout(legend.show = FALSE, fontfamily = "serif")
+
+map03
+
+## 4 inches by 5 inches, 600dpi
+# jpeg("map03.jpeg", width = 4*400, height = 5*400, res = 600)
+# map03
+# dev.off()
+```
+
+## 参考：
+- Xu, S., Eisenhauer, N., Ferlian, O., Zhang, J., Zhou, G., Lu, X., Liu, C., & Zhang, D. (2020). Species richness promotes ecosystem carbon storage: Evidence from biodiversity-ecosystem functioning experiments. Proceedings of the Royal Society B, 287(1939), 20202063. (https://doi.org/10.1098/rspb.2020.2063)
+
+- Tennekes M (2018). “tmap: Thematic Maps in R.” Journal of Statistical Software,
+84(6), 1-39. doi: 10.18637/jss.v084.i06 (https://doi.org/10.18637/jss.v084.i06).
+
