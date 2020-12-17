@@ -1,0 +1,140 @@
+## 怎样确定一个地区标本采集的完整程度
+
+原创 张金龙 ecoinformatics 2019-10-21
+
+收录于话题
+
+\#R语言 19
+
+\#数据分析 18
+
+\#标本 4
+
+\#名录 3
+
+\#编目 4
+
+# 问题：
+
+现有若干县的植物标本记录，即每个种在该县境内采集的标本数量，求这些县植物标本采集的完整程度。
+
+# 解答：
+
+标本采集的完整程度可以用随标本数量增加，物种累计数的快慢表示。
+
+假设A县采集了5000份标本，而这5000份标本总共记录了500个种；B县采集了5000份标本，而这5000份标本包括了2000个种，很显然，A县的标本采集是比较充分的；相比之下，B县就很不充足，因为B县境内，物种数仍然随着标本数快速增加。
+
+那么如何度量物种累计的快慢呢？中科院植物所的阳文静博士（Yang et al. 2013）在度量中国各县植物标本采集完整程度时，采用了物种累计数达到90%时的斜率。也就是计算标本数达到90%-100%时物种累计曲线的平均斜率。该思路简化下来，就是先计算标本数达到90%时对应的物种数，然后取平均值，然后将所有标本数对应的总物种数作为另外一个坐标点，两点确定一条直线，确定这条直线的斜率（原文信息不够详尽，可能本人理解有误）。
+
+另一种思路是计算物种数达到90%时的切线斜率。由于是随机抽样，物种数从<90%到跨越90%的一瞬间，物种数会增加，随机抽样时，物种数会围绕某个值上下波动，因此这里可以计算多次，取平均值。
+
+这里只给出第二种思路的R代码，即求切线的斜率。
+
+![图片](640)
+
+ 图1. 要读取的标本记录格式
+
+
+
+![图片](640-20201217095036042)
+
+\2. 阳文静（Yang et al., 2013）中国各县植物标本采集完整程度
+
+![图片](640-20201217095033790)
+
+![图片](640-20201217095033824)
+
+图3 物种数累计曲线：标本采集完整的县斜率小，标本采集不完整的县斜率大
+
+
+
+R脚本
+
+```
+setwd("C:/Users/helixcn/Desktop/completeness")
+library(openxlsx)
+
+# 获得某个文件夹的所有xlsx文件字符串向量
+all_files <- list.files()
+excel_files <- all_files[grepl(".xlsx", all_files)]
+
+# 针对每个标本数量，例如从30000个标本中，随机抽26000个标本，这里要随机抽取100次， nperm就是控制随机抽取的数量
+nperm = 100
+
+slope_90_100 <- NA # 初始化, slope_90_100 保存每个文件（也就是每个地点的slope值）
+
+# k为excel文件的数量
+for(k in 1:length(excel_files)){
+    
+    # 读取一个excel文件
+    specimen_names <- read.xlsx(excel_files[k])[,1]
+    
+    # 求物种数
+    nspecies <- length(unique(specimen_names))
+    
+    # 物种数不能少于10
+    if(nspecies < 10){
+        stop("Number of species should be more than 10")
+    }
+    
+    # 标本数不能少于50
+    if(length(specimen_names) < 50){
+        stop("Number of specimens should be more than 50")
+    }
+    
+    # 90%的物种数
+    nspecies_90 <- nspecies * 0.9
+    
+    ## 为了减少计算量，这里只计算物种数达到90%以后的物种累计曲线
+    ## 因此，先要计算在标本达到总标本数的多少时（求一个比例ratio），物种数不超过90%
+
+    ratio = 1.0 # 设定ratio的初始值，然后猜100次，一直到标本数刚刚少于90%的物种数为止。每一步递减0.01，猜100次（nguess），足以覆盖所有的情况
+    nguess = 100
+    for(m in 1:nguess){
+        if(length(unique(sample(specimen_names, ceiling(length(specimen_names) * ratio)))) > nspecies_90) {
+             ratio <- ratio - 0.01
+         } else {
+             ratio <- ratio
+         }
+    }
+
+    n_species_90_to_100 <- NA
+    # 从能达到90%物种数的标本比例开始计算随标本数增加的物种累计曲线
+    for (j in floor(length(specimen_names) * ratio):length(specimen_names)){
+        n_species_90_to_100_i <- NA # 初始化随机抽取100次的平均物种数
+        for (i in 1:nperm){
+            n_species_90_to_100_i <- c(n_species_90_to_100_i, length(unique(sample(specimen_names, size = j))))
+        }
+        n_species_90_to_100 <- c(n_species_90_to_100, mean(na.omit(n_species_90_to_100_i)))  #
+    }
+
+    # 初始化的时候，NA要去掉
+    n_species_90_to_100_clean <- na.omit(n_species_90_to_100)
+
+    # 只取物种数大于百分之九十物种数时的情况
+    n_species_90_to_100_clean <- n_species_90_to_100_clean[n_species_90_to_100_clean > nspecies_90]
+
+    # 为了求得每增加一份标本，平均增加多少种，要将所得结果错位，然后相减
+    par1 <- c(NA, n_species_90_to_100_clean)
+    par2 <- c(n_species_90_to_100_clean, NA)
+
+    # 相减之前，要先去掉NA，否则平均值也是NA
+    # slope_90_100为一个向量，从NA开始，长度不断增加，注意slope_90_100在循环外面已经定义了
+    # mean(na.omit(c(par2 - par1))) 就是从物种数达到90%之后，每增加一份标本，平均增加的物种数
+
+    slope_90_100 <- c(slope_90_100, mean(na.omit(c(par2 - par1)))) # 求斜率，以总标本数为基准
+
+    # 显示每个文件，slope的值
+    print(paste("The average slope (90-100%) for file", excel_files[k] ,"is:", mean(na.omit(c(par2 - par1)))))
+}
+# 将所有文件的slope，保存到一个CSV中，同时提供文件名
+write.csv(data.frame(site = excel_files, slope_90_100 = na.omit(slope_90_100)), "survey_completeness.csv")
+```
+
+# 致谢
+
+- 感谢中科院植物所刘慧圆老师一起讨论问题
+
+# 参考文献
+
+- Yang, W., Ma, K., & Kreft, H. (2013). Geographical sampling bias in a large distributional database and its effects on species richness-environment models. Journal of Biogeography, 40(8), 1415–1426. https://doi.org/10.1111/jbi.12108
