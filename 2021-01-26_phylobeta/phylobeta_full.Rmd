@@ -1,0 +1,1561 @@
+---
+title: "一个群落beta多样性分析的完整R脚本"
+author: "张金龙"
+date: "7/9/2019"
+output: html_document
+---
+
+说明： 本文是Abbas S. et al. (2019)的完整R脚本，内容包括群落稀疏化曲线、beta多样性和指示种分析、mantel检验、NMDS非参数排序、空间关系的PCNM转换和前向筛选、方差分解等各种分析以及作图等，供感兴趣的同行参考。
+
+该文章的R脚本全部为本人编写，因此有任何问题或者建议，请跟本人联系（微信 `jinlongzhang01`; email： `jinlongzhang01@gmail.com`）。
+
+因群落数据本人无权公开，这里只公布R脚本。
+
+进一步参考：
+
+* Abbas, S., Nichol, J. E., Zhang, J., & Fischer, G. A. (2019). The accumulation of species and recovery of species composition along a 70 year succession in a tropical secondary forest. Ecological Indicators, 106, 105524.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+# 稀疏化曲线，用于比较个体数不同样方的物种丰富度
+```{R echo=TRUE, message=FALSE, warning=FALSE}
+########################################################################################
+##### R script for conducting rarefaction ##############################################
+########################################################################################
+######### Author: Jinlong Zhang ########################################################
+######### Date: 18 MAY 2018 ############################################################
+######### Email: jinlongzhang01@gmail.com ##############################################
+########################################################################################
+#### 
+setwd("C:/Users/jlzhang/Dropbox/community_analysis/data")
+
+rm(list = ls())
+library(vegan)
+dat <- read.csv("SI Table 3. Sawaid's abundance matrix at TMS 20170125.csv",
+                row.names = 1, header = TRUE)
+dat[is.na(dat)] <- 0
+tdat <- t(dat)
+env <- read.csv("SI Table 2. Environments_combined_update20170928.csv", header = TRUE)
+
+
+colors_new <- c("red", "pink", "orange", "lightgreen", "blue")
+
+library(plyr)
+coll <- factor(env$AGE_MEDIAN)
+coll <- mapvalues(coll, from = c("7", "20","39","61","70"), to = colors_new)
+
+#### Using Minimum
+S <- specnumber(tdat) # observed number of species
+(raremax <- min(rowSums(tdat))) ### Number of individuals to be sampled
+res_rarefy <- rarefy(tdat, raremax)
+res_rarefy
+
+ndat <- data.frame(env, spn = S, rare_spn = res_rarefy)
+summary(aov(spn ~ AGE_MEDIAN, data = ndat))
+summary(aov(res_rarefy ~ AGE_MEDIAN, data = ndat))
+
+# tiff(filename = "rarecurve.tiff",width = 5000, height = 4800, res = 800,  compression = "lzw")
+rarecurve(tdat, step = 20, sample = raremax,
+          col = as.character(coll),
+          cex = 0.6,
+          main = "Rarefaction Curve (107 individuals)",
+          xlab = "Number of individuals",
+          ylab = "Number of species")
+legend(lty = c(1,1,1),
+       col = colors_new,
+       legend = c("7","20","39","61","70"), x = "topleft", title = "Age",  lwd = 2)
+# dev.off()
+
+# tiff(filename = "rarified species richness.tiff", width = 5000, height = 4800, res = 800, compression = "lzw")
+boxplot(res_rarefy ~ env$AGE_MEDIAN,
+        col = colors_new,
+        xlab = "Age (Years)",
+        ylab = "Rarified Number of Species",
+        main = "Rarified species richness (107 individuals)")
+# dev.off()
+
+####################################################
+#### Density, Number of Individuals of each plot 
+den <- apply(dat, 2, sum)
+age <- env$AGE_MEDIAN
+
+# tiff(filename = "density_species.tiff", width = 5000, height = 4800, res = 800, compression = "lzw")
+boxplot(den ~ env$AGE_MEDIAN, col = colors_new, 
+        xlab = "Age (Years)",
+        ylab = "Number of individuals per plot",
+        main = "Number of individuals"
+        )
+#### legend(lty = c(1,1,1),
+####        col = colors_new,
+####        legend = c("7","20","39","61","70"), 
+####        x = "topleft", 
+####        title = "Age (Years)",  
+####        lwd = 2)
+# dev.off()
+
+res_den <- data.frame(den = den, age = as.factor(env$AGE_MEDIAN))
+summary(res_aov_den <- aov(den ~ age, data = res_den))
+res_tukeyhsd <- TukeyHSD(res_aov_den)
+par(las = 2)
+plot(res_tukeyhsd)
+tapply(res_den$den, res_den$age, median)
+
+```
+# Mantel检验两个距离矩阵的相关性是否显著
+```{R}
+########################################################################################
+##### R script for conducting Mantel's test  ###########################################
+########################################################################################
+######### Author: Jinlong Zhang ########################################################
+######### Date: 18 MAY 2018 ############################################################
+######### Email: jinlongzhang01@gmail.com ##############################################
+########################################################################################
+setwd("C:/Users/jlzhang/Dropbox/community_analysis/data")
+
+rm(list = ls())
+library(vegan)
+library(ape)
+library(simba)
+library(ecodist)
+spmat <- read.csv("SI Table 3. Sawaid's abundance matrix at TMS 20170125.csv",
+                  header = TRUE, row.names = 1)
+spmat[is.na(spmat)] <- 0
+tspmat <- t(spmat)
+colors_new <- c("red", "pink", "orange", "lightgreen", "blue") #### Colors for different age classes
+
+### 4.1 Compute species dissimilarity between each pair of plots
+
+##############################################
+########### Species Similarity ###############
+##############################################
+
+#### Jaccard
+dist_jaccard <- vegdist(tspmat, method="jaccard")
+
+#### Morisita
+dist_Morisita <- vegdist(tspmat, method="morisita")
+
+#### Horn–Morisita
+dist_horn_morisita <- vegdist(tspmat, method="horn")
+
+#### Bray
+dist_bray <- vegdist(tspmat, method="bray")
+
+#### Chao
+dist_chao <- vegdist(tspmat, method="chao")
+
+
+### 4.2 Compute topographical and edaphic distance between each pair of plots
+##############################################
+########### Environmental Distance############
+##############################################
+
+envdat <- read.csv("SI Table 2. Environments_combined_update20170928.csv",
+                   header = TRUE, row.names = 1)
+head(envdat, 3)
+
+#### Transformation, allowing the aspect could be used in the analysis
+envdat$TOPO_ASPECT_DEC_SIN <- sin(envdat$ASPECT_DEC/(180/pi))
+
+attach(envdat)
+topo <- data.frame(TOPO_ELV, TOPO_SLP, TOPO_CURV, TOPO_ASPECT_DEC_SIN)
+soil <- data.frame(SOIL_PH, SOIL_OM, SOIL_N, SOIL_M,
+                   SOIL_C, SOIL_C_N_RATIO, SOIL_S, SOIL_SI, SOIL_CL)
+topo_and_soil <- cbind(topo, soil)
+hk80 <- data.frame(POINT_X, POINT_Y)
+age  <- data.frame(AGE_MEDIAN)
+detach(envdat)
+
+rownames(topo) <- rownames(envdat)
+rownames(soil) <- rownames(envdat)
+rownames(hk80) <- rownames(envdat)
+rownames(age)  <- rownames(envdat)
+
+topo_dist <- dist(scale(topo))
+soil_dist <- dist(scale(soil))
+env_dist  <- dist(scale(topo_and_soil))
+hk80_dist <- dist(hk80)
+age_dist  <- dist(age)
+```
+
+
+```R
+### 4.3 Mantel Test between each pair of the distance matrices
+
+#############################################
+################## Jaccard ##################
+#############################################
+#### use 9999 instead of 9
+
+
+## dist_jaccard
+vegan::mantel(xdis = dist_jaccard, ydis = topo_dist, permutations = 9)
+vegan::mantel(dist_jaccard, soil_dist, permutations = 9)
+vegan::mantel(dist_jaccard, hk80_dist, permutations = 9)
+vegan::mantel(dist_jaccard, age_dist , permutations = 9)
+vegan::mantel(dist_jaccard, env_dist , permutations = 9)
+
+## dist_Morisita
+vegan::mantel(dist_Morisita, topo_dist, permutations = 9)
+vegan::mantel(dist_Morisita, soil_dist, permutations = 9)
+vegan::mantel(dist_Morisita, hk80_dist, permutations = 9)
+vegan::mantel(dist_Morisita, age_dist , permutations = 9)
+vegan::mantel(dist_Morisita, env_dist , permutations = 9)
+
+## dist_horn_morisita
+vegan::mantel(dist_horn_morisita, topo_dist, permutations = 9)
+vegan::mantel(dist_horn_morisita, soil_dist, permutations = 9)
+vegan::mantel(dist_horn_morisita, hk80_dist, permutations = 9)
+vegan::mantel(dist_horn_morisita, age_dist , permutations = 9)
+vegan::mantel(dist_horn_morisita, env_dist , permutations = 9)
+
+## dist_bray
+vegan::mantel(dist_bray, topo_dist, permutations = 9)
+vegan::mantel(dist_bray, soil_dist, permutations = 9)
+vegan::mantel(dist_bray, hk80_dist, permutations = 9)
+vegan::mantel(dist_bray, age_dist , permutations = 9)
+vegan::mantel(dist_bray, env_dist , permutations = 9)
+
+## dist_chao
+vegan::mantel(dist_chao, topo_dist, permutations = 9)
+vegan::mantel(dist_chao, soil_dist, permutations = 9)
+vegan::mantel(dist_chao, hk80_dist, permutations = 9)
+vegan::mantel(dist_chao, age_dist , permutations = 9)
+vegan::mantel(dist_chao, env_dist , permutations = 9)
+
+
+## Correlation environmental variables
+#################################################################
+#############Correlation environmental variables ################
+#################################################################
+vegan::mantel(hk80_dist,  soil_dist, permutations = 9)
+vegan::mantel(age_dist ,  soil_dist, permutations = 9)
+vegan::mantel(topo_dist,  soil_dist, permutations = 9)
+vegan::mantel(age_dist ,  hk80_dist, permutations = 9)
+vegan::mantel(topo_dist,  hk80_dist, permutations = 9)
+vegan::mantel(topo_dist,  age_dist , permutations = 9)
+```
+
+# 指示种分析、PCNM、环境因子的前向筛选、物种组成的方差分解以及显著性检验
+```{R}
+########################################################################################
+##### R script for Analysing Species Turnover MRPP,        #############################
+##### Indicator Analysis, PCNM and Variation Partitioning  #############################
+########################################################################################
+######### Author: Jinlong Zhang ########################################################
+######### Date: 18 MAY 2018 ############################################################
+######### Email: jinlongzhang01@gmail.com ##############################################
+########################################################################################
+
+
+## 1. Preparation of dataset
+setwd("C:/Users/jlzhang/Dropbox/community_analysis/data")
+
+rm(list = ls())
+library(vegan)
+library(ggplot2)
+library(labdsv)
+library(corrplot)
+library(vegan)
+library(reshape2)
+library(stringi)
+library(openxlsx)
+### PCA of the environmental data
+##
+## library(devtools)
+## devtools::install_github("vqv/ggbiplot")
+library(ggbiplot)
+
+#### load and transform the data
+spmat <- read.csv("SI Table 3. Sawaid's abundance matrix at TMS 20170125.csv",
+                  header = TRUE, row.names = 1)
+spmat[is.na(spmat)] <- 0
+tspmat <- t(spmat)
+
+#### Read the environment data
+envdat <- read.csv("SI Table 2. Environments_combined_update20170928.csv",
+                   header = TRUE, row.names = 1)
+
+envdat$TOPO_ASPECT_DEC_SIN <- sin(envdat$ASPECT_DEC/(180/pi))
+
+attach(envdat)
+env <- data.frame(SOIL_PH, SOIL_OM, SOIL_N, SOIL_M,
+                   SOIL_C, SOIL_C_N_RATIO, SOIL_S, SOIL_SI, SOIL_CL,
+                   TOPO_ELV, TOPO_SLP, TOPO_CURV, TOPO_ASPECT_DEC_SIN)
+spatial <- data.frame(POINT_X, POINT_Y)
+age     <- data.frame(AGE_MEDIAN)
+detach(envdat)
+
+colors_new <- c("red", "pink", "orange", "lightgreen", "blue")
+
+## 3. Multi Response Permutation Procedure and Mean Dissimilarity Matrix
+#### MRPP (using the classes not merged)
+
+
+col1 <- colorRampPalette(c("black", "darkblue", "purple", "red", "#FF7F00",
+                           "yellow", "#007FFF"))
+
+#### jaccard
+mrpp(vegdist(tspmat, method = "jaccard"), grouping = envdat$AGE_MEDIAN, permutations = 9999)
+
+#### MEAN DIST AMONG THE GROUPS SHOWING THE DETAILS
+mean_dist_jaccard <- meandist(vegdist(tspmat, method = "jaccard"), grouping = envdat$AGE_MEDIAN, permutations = 9999)
+#### tiff(filename = "mean_dist_jaccard.tiff", width = 4800, height = 4800, res = 600, compression = "lzw")
+corrplot(mean_dist_jaccard,type = "lower", is.corr = FALSE,  col = col1(100), cl.lim = c(0, 1),tl.srt = 0, tl.offset = 1.2)
+title("Mean Jaccard Distance")
+#### dev.off()
+
+
+#### morisita
+mrpp(vegdist(tspmat, method = "morisita"), grouping = envdat$AGE_MEDIAN, permutations = 9999)
+
+#### MEAN DIST AMONG THE GROUPS SHOWING THE DETAILS
+mean_dist_morisita <- meandist(vegdist(tspmat, method = "morisita"), grouping = envdat$AGE_MEDIAN, permutations = 9999)
+#### tiff(filename = "mean_dist_morisita.tiff", width = 4800, height = 4800, res = 600, compression = "lzw")
+corrplot(mean_dist_morisita, type = "lower",is.corr = FALSE,  col = col1(100), cl.lim = c(0, 1),tl.srt = 0, tl.offset = 1.2)
+title("Mean Morisita Distance")
+#dev.off()
+
+#### horn
+mrpp(vegdist(tspmat, method = "horn"), grouping = envdat$AGE_MEDIAN, permutations = 9999)
+
+#### MEAN DIST AMONG THE GROUPS SHOWING THE DETAILS
+mean_dist_horn <- meandist(vegdist(tspmat, method = "horn"), grouping = envdat$AGE_MEDIAN, permutations = 9999)
+#### tiff(filename = "mean_dist_horn.tiff", width = 4800, height = 4800, res = 600, compression = "lzw")
+corrplot(mean_dist_horn,type = "lower", is.corr = FALSE,  col = col1(100), cl.lim = c(0, 1),tl.srt = 0, tl.offset = 1.2)
+title("Mean Horn-Morisita Distance")
+#### dev.off()
+
+
+#### Bray-Curtis
+mrpp(vegdist(tspmat, method = "bray"), grouping = envdat$AGE_MEDIAN, permutations = 9999)
+
+#### MEAN DIST AMONG THE GROUPS SHOWING THE DETAILS
+mean_dist_bray <- meandist(vegdist(tspmat, method = "bray"), grouping = envdat$AGE_MEDIAN, permutations = 9999)
+#### tiff(filename = "mean_dist_bray.tiff", width = 4800, height = 4800, res = 600, compression = "lzw")
+corrplot(mean_dist_bray,type = "lower", is.corr = FALSE,  col = col1(100), cl.lim = c(0, 1),tl.srt = 0, tl.offset = 1.2)
+title("Mean Bray-Curtis Distance")
+#### dev.off()
+
+
+#### Chao
+mrpp(vegdist(tspmat, method = "chao"), grouping = envdat$AGE_MEDIAN, permutations = 9999)
+
+#### MEAN DIST AMONG THE GROUPS SHOWING THE DETAILS
+mean_dist_bray <- meandist(vegdist(tspmat, method = "chao"), grouping = envdat$AGE_MEDIAN, permutations = 9999)
+#### tiff(filename = "mean_dist_bray.tiff", width = 4800, height = 4800, res = 600, compression = "lzw")
+corrplot(mean_dist_bray,type = "lower", is.corr = FALSE,  col = col1(100), cl.lim = c(0, 1),tl.srt = 0, tl.offset = 1.2)
+title("Mean Chao Distance")
+#### dev.off()
+
+
+## 4. Indicator Value for each age class
+res_ind <- data.frame(indval(tspmat,  envdat$AGE_MEDIAN)$pval)
+significant_sp <- row.names(res_ind)[res_ind[,1] < 0.05]
+
+indval_res <- indval(tspmat,  envdat$AGE_MEDIAN)$indval
+
+ind_dat <- indval_res[row.names(indval_res) %in% significant_sp,]
+ind_dat2 <- data.frame(species = row.names(ind_dat),ind_dat)
+
+
+ind_dat_metl <- melt(ind_dat2)
+
+ind_dat_metl$age <- stri_pad_left((gsub("X", "", ind_dat_metl$variable)), width = 2, pad = "0")
+ind_dat_metl$species <- gsub("_", " ", ind_dat_metl$species)
+
+#### tiff(filename = "indicator_species_class.tiff", width = 8000, height = 4800, res = 700, compression = "lzw")
+ggplot(data=ind_dat_metl, aes(x=age, y=value, fill=age)) +
+    geom_bar(stat="identity") + facet_wrap(~ species, ncol = 6) + ylab("Indicator Value")+ theme_bw()  + scale_fill_manual(values=colors_new)
+#### dev.off()
+
+
+### write.xlsx(indval_res[row.names(indval_res) %in% significant_sp,], "Indicator_value_of_species_each_age_class_significant.xlsx", row.names = TRUE)
+
+
+## 5. PCNM and Variation Partitioning
+##### Generate PCNM vectors
+pcnm_plots <- pcnm(dist(spatial))
+pcnm_plots_vectors <- data.frame(pcnm_plots$vectors)
+mod0 <- rda(tspmat ~ 1, pcnm_plots_vectors)  # Model with intercept only
+mod1 <- rda(tspmat ~ ., pcnm_plots_vectors)  # Model with all explanatory variables
+
+### With scope present, the default direction is "both"
+### forward_selection <- ordistep(mod0, scope = formula(mod1), perm.max = 1000)
+
+### backward selection
+### backward_selection <- ordistep(mod1, perm.max = 1000)
+
+### Both backward and forward selection selected the PCNM vector 1,2 and 7 to represent the spatial structure.
+spat <- subset(pcnm_plots_vectors, selected = c("PCNM2", "PCNM1", "PCNM7"))
+
+env.pca <- princomp(env, cor = TRUE)
+summary(env.pca)
+
+#### devtools::install_github("vqv/ggbiplot") #### To install
+#### Visualization of the PCA for environment
+ ggbiplot(env.pca, obs.scale = 1, var.scale = 1,
+         groups = factor(age$AGE_MEDIAN), ellipse = TRUE, circle = TRUE) +
+  theme(legend.direction = 'horizontal', legend.position = 'top')
+
+#### Using forward selection to identify the most important components in explaining species composition to avoid over fitting.
+env_pca_scores <- data.frame(env.pca$scores)
+env_pca_model0 <- rda(tspmat ~ 1, env_pca_scores )  # Model only with intercept
+env_pca_model  <- rda(tspmat ~ ., env_pca_scores )   # Model with all explanatory variables
+
+#### Forward Selection based on R-Square explained using RDA
+pca_selection_env_r2 <- ordiR2step(env_pca_model0, scope = env_pca_model)
+#### Only the first two components selected, therefore only use the first two components
+
+res_part <- varpart(tspmat, env.pca$scores[,c(1,2)], pcnm_plots_vectors, age)
+
+### Visualize the contribution of X1: the environment; X2 the spatial distance; X3:age.
+plot(res_part, Xnames = c("Env","Spatial","Age"), bg=2:4)
+
+### Figure. Variation partitioning X1: the environment; X2 the spatial distance; X3:age.
+
+```
+# betadisper检验beta多样性各组的离散度是否有统计差异，Mantel Correlogram展示距离矩阵相关的精细结构
+```{R}
+############################################################
+##### R script for Analysing Species Turnover, 
+#####  betadisper and Mantel Correlogram ##############
+############################################################
+######### Author: Jinlong Zhang ############################
+######### Date: 18 MAY 2018 ################################
+######### Email: jinlongzhang01@gmail.com ##################
+############################################################
+setwd("C:/Users/jlzhang/Dropbox/community_analysis/data")
+rm(list = ls())
+library(vegan)
+library(ape)
+library(simba)
+library(ecodist)
+spmat <- read.csv("SI Table 3. Sawaid's abundance matrix at TMS 20170125.csv",
+                  header = TRUE, row.names = 1)
+spmat[is.na(spmat)] <- 0
+tspmat <- t(spmat)
+
+### 4.1 Compute species dissimilarity between each pair of plots
+##############################################
+########### Species Similarity ###############
+##############################################
+
+#### Jaccard
+dist_jaccard <- vegdist(tspmat, method="jaccard", binary = TRUE)
+
+#### Morisita
+dist_Morisita <- vegdist(tspmat, method="morisita")
+
+#### Horn–Morisita
+dist_horn_morisita <- vegdist(tspmat, method="horn")
+
+#### Bray-Curtis
+dist_bray <- vegdist(tspmat, method="bray")
+
+#### Chao
+dist_chao <- vegdist(tspmat, method="chao")
+
+
+### 4.2 Compute topographical and edaphic distance between each pair of plots
+
+
+##############################################
+########### Environmental Distance############
+##############################################
+
+envdat <- read.csv("SI Table 2. Environments_combined_update20170928.csv",
+                   header = TRUE, row.names = 1)
+
+#### Transformation, allowing the aspect could be used in the analysis
+envdat$TOPO_ASPECT_DEC_SIN <- sin(envdat$ASPECT_DEC/(180/pi))
+
+attach(envdat)
+topo <- data.frame(TOPO_ELV, TOPO_SLP, TOPO_CURV, TOPO_ASPECT_DEC_SIN)
+soil <- data.frame(SOIL_PH, SOIL_OM, SOIL_N, SOIL_M,
+                   SOIL_C, SOIL_C_N_RATIO, SOIL_S, SOIL_SI, SOIL_CL)
+hk80 <- data.frame(POINT_X, POINT_Y)
+age  <- data.frame(AGE_MEDIAN)
+detach(envdat)
+
+rownames(topo) <- rownames(envdat)
+rownames(soil) <- rownames(envdat)
+rownames(hk80) <- rownames(envdat)
+rownames(age)  <- rownames(envdat)
+
+topo_dist <- dist(scale(topo))
+soil_dist <- dist(scale(soil))
+hk80_dist <- dist(hk80)
+age_dist  <- dist(age)
+
+
+```
+
+```R
+### 4.3 Mantel Test between each pair of the distance matrices
+
+#############################################
+################## Jaccard ##################
+#############################################
+
+mantel.test(as.matrix(dist_jaccard), as.matrix(topo_dist), nperm = 999)
+mantel.test(as.matrix(dist_jaccard), as.matrix(soil_dist), nperm = 999)
+mantel.test(as.matrix(dist_jaccard), as.matrix(hk80_dist), nperm = 999)
+mantel.test(as.matrix(dist_jaccard), as.matrix(age_dist ), nperm = 999)
+
+mantel.test(as.matrix(dist_Morisita), as.matrix(topo_dist), nperm = 999)
+mantel.test(as.matrix(dist_Morisita), as.matrix(soil_dist), nperm = 999)
+mantel.test(as.matrix(dist_Morisita), as.matrix(hk80_dist), nperm = 999)
+mantel.test(as.matrix(dist_Morisita), as.matrix(age_dist ), nperm = 999)
+
+mantel.test(as.matrix(dist_horn_morisita), as.matrix(topo_dist), nperm = 999)
+mantel.test(as.matrix(dist_horn_morisita), as.matrix(soil_dist), nperm = 999)
+mantel.test(as.matrix(dist_horn_morisita), as.matrix(hk80_dist), nperm = 999)
+mantel.test(as.matrix(dist_horn_morisita), as.matrix(age_dist ), nperm = 999)
+
+mantel.test(as.matrix(dist_bray), as.matrix(topo_dist), nperm = 999)
+mantel.test(as.matrix(dist_bray), as.matrix(soil_dist), nperm = 999)
+mantel.test(as.matrix(dist_bray), as.matrix(hk80_dist), nperm = 999)
+mantel.test(as.matrix(dist_bray), as.matrix(age_dist ), nperm = 999)
+
+mantel.test(as.matrix(dist_chao), as.matrix(topo_dist), nperm = 999)
+mantel.test(as.matrix(dist_chao), as.matrix(soil_dist), nperm = 999)
+mantel.test(as.matrix(dist_chao), as.matrix(hk80_dist), nperm = 999)
+mantel.test(as.matrix(dist_chao), as.matrix(age_dist ), nperm = 999)
+
+
+################################################################
+#################################################################
+#############Correlation environmental variables ################
+#################################################################
+mantel.test(as.matrix(hk80_dist), as.matrix( soil_dist), graph = FALSE)
+mantel.test(as.matrix(age_dist ), as.matrix( soil_dist), graph = FALSE)
+mantel.test(as.matrix(topo_dist), as.matrix( soil_dist), graph = FALSE)
+mantel.test(as.matrix(age_dist ), as.matrix( hk80_dist), graph = FALSE)
+mantel.test(as.matrix(topo_dist), as.matrix( hk80_dist), graph = FALSE)
+mantel.test(as.matrix(topo_dist), as.matrix( age_dist ), graph = FALSE)
+```
+
+```{R}
+### 4.4 Convert the distance matrices to vectors
+#############################################
+#############################################
+vector_dist_jaccard        <- liste(dist_jaccard)[,3]
+vector_dist_Morisita       <- liste(dist_Morisita)[,3]
+vector_dist_horn_morisita  <- liste(dist_horn_morisita)[,3]
+vector_dist_bray           <- liste(dist_bray)[,3]
+vector_dist_chao           <- liste(dist_chao)[,3]
+
+vector_topo_dist           <- liste(topo_dist)[,3]
+vector_soil_dist           <- liste(soil_dist)[,3]
+vector_hk80_dist           <- liste(hk80_dist)[,3]
+vector_age_dist            <- liste(age_dist )[,3]
+
+
+#############################################
+beta_dat <- data.frame(vector_dist_jaccard,
+                       vector_dist_Morisita,
+                       vector_dist_horn_morisita, 
+                       vector_dist_bray,
+                       vector_dist_chao,
+                       vector_topo_dist,
+                       vector_soil_dist, 
+                       vector_hk80_dist, 
+                       vector_age_dist)
+
+### 4.5 The relationship between Jaccard Dissimilarity and the topographical, soil, spatial and age
+
+###############################################################
+########## Jaccard Dissimilarity, Presence-Absence ############
+###############################################################
+
+#### topo_dist
+plot(vector_dist_jaccard ~ vector_topo_dist, data = beta_dat,
+     col = "grey", xlab = "Topographical Distance",
+     ylab = "Species Dissimilarity (1-Jaccard)",
+     main = "Jaccard Dissimilarity vs. Topographical Distance")
+jaccard_topo_loess <- loess(vector_dist_jaccard ~ vector_topo_dist,
+                            data = beta_dat, span = 1, degree = 1)
+predict_jaccard_topo_loess <- predict(jaccard_topo_loess,
+                                      data.frame(vector_topo_dist =
+                                                   seq(min(vector_topo_dist),
+                                                       max(vector_topo_dist),
+                                                       length.out = 200)),
+                                      se = TRUE)
+lines(x = seq(min(vector_topo_dist), max(vector_topo_dist), length.out = 200),
+      y = predict_jaccard_topo_loess$fit, col = "blue", lwd = 2)
+
+#### Euclidean distance in Soil
+plot(vector_dist_jaccard ~ vector_soil_dist, data = beta_dat,
+     col = "grey",
+     xlab = "Euclidean Distance of Soil Properties",
+     ylab = "Species Dissimilarity (1-Jaccard)",
+     main = "Jaccard Dissimilarity vs. Euclidean Distance of Soil")
+jaccard_soil_loess <- loess(vector_dist_jaccard ~ vector_soil_dist,
+                            data = beta_dat, span = 1, degree = 1)
+predict_jaccard_soil_loess <- predict(jaccard_soil_loess,
+                                      data.frame(vector_soil_dist =
+                                                   seq(min(vector_soil_dist),
+                                                       max(vector_soil_dist),
+                                                       length.out = 200)),
+                                      se = TRUE)
+lines(x = seq(min(vector_soil_dist), max(vector_soil_dist), length.out = 200),
+      y = predict_jaccard_soil_loess$fit, col = "blue", lwd = 2)
+
+#### Spatial distance
+plot(vector_dist_jaccard ~ vector_hk80_dist, data = beta_dat,
+     col = "grey", xlab = "Spatial Distance (m)",
+     ylab = "Species Dissimilarity (1-Jaccard)",
+     main = "Jaccard Dissimilarity vs. Spatial Distance")
+jaccard_hk80_loess <- loess(vector_dist_jaccard ~ vector_hk80_dist,
+                            data = beta_dat, span = 1, degree = 1)
+predict_jaccard_hk80_loess <- predict(jaccard_hk80_loess,
+                                      data.frame(vector_hk80_dist =
+                                                   seq(min(vector_hk80_dist),
+                                                       max(vector_hk80_dist),
+                                                       length.out = 200)),
+                                      se = TRUE)
+lines(x = seq(min(vector_hk80_dist), max(vector_hk80_dist), length.out = 200),
+      y = predict_jaccard_hk80_loess$fit, col = "blue", lwd = 2)
+
+### differences in Age
+plot(vector_dist_jaccard ~ vector_age_dist, data = beta_dat,
+     col = "grey", xlab = "Difference in Age (years)",
+     ylab = "Species Dissimilarity (1-Jaccard)",
+     main = "Jaccard Dissimilarity vs. Differences in Age")
+jaccard_hk80_loess <- loess(vector_dist_jaccard ~ vector_age_dist,
+                            data = beta_dat, span = 1, degree = 1)
+predict_jaccard_hk80_loess <- predict(jaccard_hk80_loess,
+                                      data.frame(vector_age_dist =
+                                                   seq(min(vector_age_dist),
+                                                       max(vector_age_dist),
+                                                       length.out = 200)),
+                                      se = TRUE)
+lines(x = seq(min(vector_age_dist), max(vector_age_dist), length.out = 200),
+      y = predict_jaccard_hk80_loess$fit, col = "blue", lwd = 2)
+
+### 4.6 The relationship between Morisita Dissimilarity and the topographical, soil, spatial and age
+
+###############################################################
+############## Morisita Abundance Based ########################
+###############################################################
+
+#### Differences in topological variables
+plot(vector_dist_Morisita ~ vector_topo_dist, data = beta_dat,
+     col = "grey",
+     xlab = "Topographical Distance",
+     ylab = "Species Dissimilarity (Morisita)",
+     main = "Morisita Dissimilarity vs. Topographical Distance")
+Morisita_topo_loess <- loess(vector_dist_Morisita ~ vector_topo_dist,
+                            data = beta_dat, span = 1, degree = 1)
+predict_Morisita_topo_loess <- predict(Morisita_topo_loess,
+                                      data.frame(vector_topo_dist =
+                                                   seq(min(vector_topo_dist),
+                                                       max(vector_topo_dist),
+                                                       length.out = 200)),
+                                      se = TRUE)
+lines(x = seq(min(vector_topo_dist), max(vector_topo_dist), length.out = 200),
+      y = predict_Morisita_topo_loess$fit, col = "orange", lwd = 2)
+
+#### Soil Distance
+plot(vector_dist_Morisita ~ vector_soil_dist, data = beta_dat, col = "grey",
+     xlab = "Euclidean Distance of Soil Properties",
+     ylab = "Species Dissimilarity (Morisita)",
+     main = "Morisita Dissimilarity vs. Euclidean Distance of Soil")
+Morisita_soil_loess <- loess(vector_dist_Morisita ~ vector_soil_dist,
+                            data = beta_dat, span = 1, degree = 1)
+predict_Morisita_soil_loess <- predict(Morisita_soil_loess,
+                                      data.frame(vector_soil_dist =
+                                                   seq(min(vector_soil_dist),
+                                                       max(vector_soil_dist),
+                                                       length.out = 200)),
+                                      se = TRUE)
+lines(x = seq(min(vector_soil_dist), max(vector_soil_dist), length.out = 200),
+      y = predict_Morisita_soil_loess$fit, col = "orange", lwd = 2)
+
+#### Spatial distance
+plot(vector_dist_Morisita ~ vector_hk80_dist, data = beta_dat,
+     col = "grey", xlab = "Spatial Distance",
+     ylab = "Species Dissimilarity (Morisita)",
+     main = "Morisita Dissimilarity vs. Spatial Distance")
+Morisita_hk80_loess <- loess(vector_dist_Morisita ~ vector_hk80_dist,
+                            data = beta_dat, span = 1, degree = 1)
+predict_Morisita_hk80_loess <- predict(Morisita_hk80_loess,
+                                      data.frame(vector_hk80_dist =
+                                                   seq(min(vector_hk80_dist),
+                                                       max(vector_hk80_dist),
+                                                       length.out = 200)),
+                                      se = TRUE)
+lines(x = seq(min(vector_hk80_dist), max(vector_hk80_dist), length.out = 200),
+      y = predict_Morisita_hk80_loess$fit, col = "orange", lwd = 2)
+
+#### Age
+plot(vector_dist_Morisita ~ vector_age_dist,
+     data = beta_dat, col = "grey",
+     xlab = "Difference in Age (years)",
+     ylab = "Species Dissimilarity (Morisita)",
+     main = "Morisita Dissimilarity vs. Differences in Age")
+Morisita_age_loess <- loess(vector_dist_Morisita ~ vector_age_dist,
+                           data = beta_dat, span = 1, degree = 1)
+predict_Morisita_age_loess <- predict(Morisita_age_loess,
+                                     data.frame(vector_age_dist =
+                                                  seq(min(vector_age_dist),
+                                                      max(vector_age_dist),
+                                                      length.out = 200)),
+                                     se = TRUE)
+lines(x = seq(min(vector_age_dist), max(vector_age_dist), length.out = 200),
+      y = predict_Morisita_age_loess$fit, col = "orange", lwd = 2)
+
+### 4.7 The relationship between Horn-morisita Dissimilarity and the topographical, soil, spatial and age
+
+##########################################################
+######## Horn_morisita, Abundance Based ##################
+##########################################################
+
+#### Differences in topological variables
+plot(vector_dist_horn_morisita ~ vector_topo_dist,
+     data = beta_dat, col = "grey",
+     xlab = "Topographical Distance",
+     ylab = "Species Dissimilarity (Horn-Morisita)",
+     main = "Horn-Morisita Dissimilarity vs. Topographical Distance")
+horn_morisita_topo_loess <- loess(vector_dist_horn_morisita ~ vector_topo_dist,
+                                  data = beta_dat, span = 1, degree = 1)
+predict_horn_morisita_topo_loess <- predict(horn_morisita_topo_loess,
+                                            data.frame(vector_topo_dist =
+                                                         seq(min(vector_topo_dist),
+                                                             max(vector_topo_dist),
+                                                             length.out = 200)),
+                                            se = TRUE)
+lines(x = seq(min(vector_topo_dist),
+              max(vector_topo_dist), length.out = 200),
+      y = predict_horn_morisita_topo_loess$fit, col = "red", lwd = 2)
+
+#### Soil Distance
+plot(vector_dist_horn_morisita ~ vector_soil_dist,
+     data = beta_dat,
+     col  = "grey",
+     xlab = "Euclidean Distance of Soil Properties",
+     ylab = "Species Dissimilarity (Horn-Morisita)",
+     main = "Horn-Morisita Dissimilarity vs. Euclidean Distance of Soil")
+horn_morisita_soil_loess <- loess(vector_dist_horn_morisita ~ vector_soil_dist,
+                                  data = beta_dat, span = 1, degree = 1)
+predict_horn_morisita_soil_loess <- predict(horn_morisita_soil_loess,
+                                            data.frame(vector_soil_dist =
+                                                         seq(min(vector_soil_dist),
+                                                             max(vector_soil_dist),
+                                                             length.out = 200)),
+                                            se = TRUE)
+lines(x = seq(min(vector_soil_dist), max(vector_soil_dist), length.out = 200),
+      y = predict_horn_morisita_soil_loess$fit, col = "red", lwd = 2)
+
+#### Spatial distance
+plot(vector_dist_horn_morisita ~ vector_hk80_dist, data = beta_dat,
+     col  = "grey",
+     xlab = "Spatial Distance",
+     ylab = "Species Dissimilarity (Horn-Morisita)",
+     main = "Horn-Morisita Dissimilarity vs. Spatial Distance")
+horn_morisita_hk80_loess <- loess(vector_dist_horn_morisita ~ vector_hk80_dist,
+                                  data = beta_dat, span = 1, degree = 1)
+predict_horn_morisita_hk80_loess <- predict(horn_morisita_hk80_loess,
+                                            data.frame(vector_hk80_dist =
+                                                         seq(min(vector_hk80_dist),
+                                                             max(vector_hk80_dist),
+                                                             length.out = 200)),
+                                            se = TRUE)
+lines(x = seq(min(vector_hk80_dist), max(vector_hk80_dist), length.out = 200),
+      y = predict_horn_morisita_hk80_loess$fit, col = "red", lwd = 2)
+
+#### Age
+plot(vector_dist_horn_morisita ~ vector_age_dist,
+     data = beta_dat, col = "grey",
+     xlab = "Difference in Age (years)",
+     ylab = "Species Dissimilarity (Horn-Morisita)",
+     main = "Horn-Morisita Dissimilarity vs. Differences in Age")
+horn_morisita_hk80_loess <- loess(vector_dist_horn_morisita ~ vector_age_dist,
+                                  data = beta_dat, span = 1, degree = 1)
+predict_horn_morisita_age_loess <- predict(horn_morisita_hk80_loess,
+                                           data.frame(vector_age_dist =
+                                                        seq(min(vector_age_dist),
+                                                            max(vector_age_dist),
+                                                            length.out = 200)),
+                                           se = TRUE)
+lines(x = seq(min(vector_age_dist), max(vector_age_dist), length.out = 200),
+      y = predict_horn_morisita_age_loess$fit, col = "red", lwd = 2)
+
+#############################################################################################
+#############################################################################################
+###############################################################
+########## Bray-Curtis Dissimilarity, Presence-Absence ############
+###############################################################
+
+#### topo_dist
+plot(vector_dist_bray ~ vector_topo_dist, data = beta_dat,
+     col = "grey", xlab = "Topographical Distance",
+     ylab = "Species Dissimilarity (1-bray)",
+     main = "Bray-Curtis Dissimilarity vs. Topographical Distance")
+bray_topo_loess <- loess(vector_dist_bray ~ vector_topo_dist,
+                            data = beta_dat, span = 1, degree = 1)
+predict_bray_topo_loess <- predict(bray_topo_loess,
+                                      data.frame(vector_topo_dist =
+                                                   seq(min(vector_topo_dist),
+                                                       max(vector_topo_dist),
+                                                       length.out = 200)),
+                                      se = TRUE)
+lines(x = seq(min(vector_topo_dist), max(vector_topo_dist), length.out = 200),
+      y = predict_bray_topo_loess$fit, col = "blue", lwd = 2)
+
+#### Euclidean distance in Soil
+plot(vector_dist_bray ~ vector_soil_dist, data = beta_dat,
+     col = "grey",
+     xlab = "Euclidean Distance of Soil Properties",
+     ylab = "Species Dissimilarity (1-bray)",
+     main = "Bray-Curtis Dissimilarity vs. Euclidean Distance of Soil")
+bray_soil_loess <- loess(vector_dist_bray ~ vector_soil_dist,
+                            data = beta_dat, span = 1, degree = 1)
+predict_bray_soil_loess <- predict(bray_soil_loess,
+                                      data.frame(vector_soil_dist =
+                                                   seq(min(vector_soil_dist),
+                                                       max(vector_soil_dist),
+                                                       length.out = 200)),
+                                      se = TRUE)
+lines(x = seq(min(vector_soil_dist), max(vector_soil_dist), length.out = 200),
+      y = predict_bray_soil_loess$fit, col = "blue", lwd = 2)
+
+#### Spatial distance
+plot(vector_dist_bray ~ vector_hk80_dist, data = beta_dat,
+     col = "grey", xlab = "Spatial Distance (m)",
+     ylab = "Species Dissimilarity (1-bray)",
+     main = "Bray-Curtis Dissimilarity vs. Spatial Distance")
+bray_hk80_loess <- loess(vector_dist_bray ~ vector_hk80_dist,
+                            data = beta_dat, span = 1, degree = 1)
+predict_bray_hk80_loess <- predict(bray_hk80_loess,
+                                      data.frame(vector_hk80_dist =
+                                                   seq(min(vector_hk80_dist),
+                                                       max(vector_hk80_dist),
+                                                       length.out = 200)),
+                                      se = TRUE)
+lines(x = seq(min(vector_hk80_dist), max(vector_hk80_dist), length.out = 200),
+      y = predict_bray_hk80_loess$fit, col = "blue", lwd = 2)
+
+### differences in Age
+plot(vector_dist_bray ~ vector_age_dist, data = beta_dat,
+     col = "grey", xlab = "Difference in Age (years)",
+     ylab = "Species Dissimilarity (1-bray)",
+     main = "Bray-Curtis Dissimilarity vs. Differences in Age")
+bray_hk80_loess <- loess(vector_dist_bray ~ vector_age_dist,
+                            data = beta_dat, span = 1, degree = 1)
+predict_bray_hk80_loess <- predict(bray_hk80_loess,
+                                      data.frame(vector_age_dist =
+                                                   seq(min(vector_age_dist),
+                                                       max(vector_age_dist),
+                                                       length.out = 200)),
+                                      se = TRUE)
+lines(x = seq(min(vector_age_dist), max(vector_age_dist), length.out = 200),
+      y = predict_bray_hk80_loess$fit, col = "blue", lwd = 2)
+
+
+###############################################################
+########## Chao Dissimilarity, Presence-Absence ############
+###############################################################
+
+#### topo_dist
+plot(vector_dist_chao ~ vector_topo_dist, data = beta_dat,
+     col = "grey", xlab = "Topographical Distance",
+     ylab = "Species Dissimilarity (1-chao)",
+     main = "Chao Dissimilarity vs. Topographical Distance")
+chao_topo_loess <- loess(vector_dist_chao ~ vector_topo_dist,
+                            data = beta_dat, span = 1, degree = 1)
+predict_chao_topo_loess <- predict(chao_topo_loess,
+                                      data.frame(vector_topo_dist =
+                                                   seq(min(vector_topo_dist),
+                                                       max(vector_topo_dist),
+                                                       length.out = 200)),
+                                      se = TRUE)
+lines(x = seq(min(vector_topo_dist), max(vector_topo_dist), length.out = 200),
+      y = predict_chao_topo_loess$fit, col = "blue", lwd = 2)
+
+#### Euclidean distance in Soil
+plot(vector_dist_chao ~ vector_soil_dist, data = beta_dat,
+     col = "grey",
+     xlab = "Euclidean Distance of Soil Properties",
+     ylab = "Species Dissimilarity (1-chao)",
+     main = "Chao Dissimilarity vs. Euclidean Distance of Soil")
+chao_soil_loess <- loess(vector_dist_chao ~ vector_soil_dist,
+                            data = beta_dat, span = 1, degree = 1)
+predict_chao_soil_loess <- predict(chao_soil_loess,
+                                      data.frame(vector_soil_dist =
+                                                   seq(min(vector_soil_dist),
+                                                       max(vector_soil_dist),
+                                                       length.out = 200)),
+                                      se = TRUE)
+lines(x = seq(min(vector_soil_dist), max(vector_soil_dist), length.out = 200),
+      y = predict_chao_soil_loess$fit, col = "blue", lwd = 2)
+
+#### Spatial distance
+plot(vector_dist_chao ~ vector_hk80_dist, data = beta_dat,
+     col = "grey", xlab = "Spatial Distance (m)",
+     ylab = "Species Dissimilarity (1-chao)",
+     main = "Chao Dissimilarity vs. Spatial Distance")
+chao_hk80_loess <- loess(vector_dist_chao ~ vector_hk80_dist,
+                            data = beta_dat, span = 1, degree = 1)
+predict_chao_hk80_loess <- predict(chao_hk80_loess,
+                                      data.frame(vector_hk80_dist =
+                                                   seq(min(vector_hk80_dist),
+                                                       max(vector_hk80_dist),
+                                                       length.out = 200)),
+                                      se = TRUE)
+lines(x = seq(min(vector_hk80_dist), max(vector_hk80_dist), length.out = 200),
+      y = predict_chao_hk80_loess$fit, col = "blue", lwd = 2)
+
+### differences in Age
+plot(vector_dist_chao ~ vector_age_dist, data = beta_dat,
+     col = "grey", xlab = "Difference in Age (years)",
+     ylab = "Species Dissimilarity (1-chao)",
+     main = "Chao Dissimilarity vs. Differences in Age")
+chao_hk80_loess <- loess(vector_dist_chao ~ vector_age_dist,
+                            data = beta_dat, span = 1, degree = 1)
+predict_chao_hk80_loess <- predict(chao_hk80_loess,
+                                      data.frame(vector_age_dist =
+                                                   seq(min(vector_age_dist),
+                                                       max(vector_age_dist),
+                                                       length.out = 200)),
+                                      se = TRUE)
+lines(x = seq(min(vector_age_dist), max(vector_age_dist), length.out = 200),
+      y = predict_chao_hk80_loess$fit, col = "blue", lwd = 2)
+
+########################################################################################
+########################################################################################
+
+### 4.9 The analysis of dispersion of variances within groups, all the plots being grouped by age
+
+ res_anosim_jaccard           <- anosim(dist_jaccard, grouping = envdat$AGE_MEDIAN, permutations = 9999)
+ res_anosim_horn_morisita     <- anosim(dist_horn_morisita, grouping = envdat$AGE_MEDIAN, permutations = 9999)
+ res_anosim_Morisita          <- anosim(dist_Morisita, grouping = envdat$AGE_MEDIAN, permutations = 9999)
+ res_anosim_Morisita          <- anosim(dist_Morisita, grouping = envdat$AGE_MEDIAN, permutations = 9999)
+ res_anosim_bray              <- anosim(dist_bray, grouping = envdat$AGE_MEDIAN, permutations = 9999)
+ res_anosim_chao              <- anosim(dist_chao, grouping = envdat$AGE_MEDIAN, permutations = 9999)
+
+summary(res_anosim_jaccard       )
+plot(res_anosim_jaccard  , main = "Jaccard Dissimilarity")
+
+summary( res_anosim_horn_morisita)
+plot(res_anosim_horn_morisita  , main = "Horn-Morisita Dissimilarity")
+
+summary( res_anosim_Morisita     )
+plot(res_anosim_Morisita     , main = "Morisita Dissimilarity")
+ 
+summary( res_anosim_bray         )
+plot(res_anosim_bray     , main = "Bray-Curtis Dissimilarity")
+
+summary( res_anosim_chao         )
+plot(res_anosim_chao     , main = "Chao Dissimilarity")
+
+
+################## Adonis 2
+
+res_adonis2_jaccard           <- adonis2(dist_jaccard ~ AGE_MEDIAN, data = envdat, permutations = 9999)
+res_adonis2_horn_morisita     <- adonis2(dist_horn_morisita ~ AGE_MEDIAN,data = envdat, permutations = 9999)
+res_adonis2_Morisita          <- adonis2(dist_Morisita ~ AGE_MEDIAN, data = envdat, permutations = 9999)
+res_adonis2_bray              <- adonis2(dist_bray ~ AGE_MEDIAN, data = envdat, permutations = 9999)
+res_adonis2_chao              <- adonis2(dist_chao ~ AGE_MEDIAN, data = envdat, permutations = 9999)
+
+res_adonis2_jaccard
+# res_adonis2_horn_morisita
+# res_adonis2_Morisita
+# res_adonis2_bray
+# res_adonis2_chao 
+
+res_betadisper_jaccard       <- betadisper(dist_jaccard,       group = envdat$AGE_MEDIAN)
+res_betadisper_horn_morisita <- betadisper(dist_horn_morisita, group = envdat$AGE_MEDIAN)
+res_betadisper_Morisita      <- betadisper(dist_Morisita,      group = envdat$AGE_MEDIAN)
+res_betadisper_bray          <- betadisper(dist_bray,          group = envdat$AGE_MEDIAN)
+res_betadisper_chao          <- betadisper(dist_chao,          group = envdat$AGE_MEDIAN)
+
+###
+plot(res_betadisper_jaccard,
+     ellipse = TRUE, hull = FALSE, xlim = c(-.5, .5), ylim = c(-.8, .3),
+     main = "Distribution of Jaccard dissimilarity", col = c("red", "orange", "gold", "green", "blue"))
+
+#### Distribution of Jaccard Dissimilarity among different age classes. The ellipse for each group was based on one standard deviation and centered in median of each group.
+
+plot(res_betadisper_Morisita,
+     ellipse = TRUE, hull = FALSE, xlim = c(-.7, .7), ylim = c(-.3, 1.0),
+     main = "Distribution of Morisita dissimilarity", col = c("red", "orange", "gold", "green", "blue"))
+
+#### Distribution of Morisita Dissimilarity among different age classes. The ellipse for each group was based on one standard deviation and centered in median of each group.
+
+plot(res_betadisper_horn_morisita,
+      ellipse = TRUE, hull = FALSE, xlim = c(-.7, .7), ylim = c(-.3, 1.0),
+      main = "Distribution of Horn-Morisita dissimilarity", col = c("red", "orange", "gold", "green", "blue"))
+
+#### Distribution of Horn-Morisita Dissimilarity among different age classes. The ellipse for each group was based on one standard deviation and centered in median of each group.
+
+plot(res_betadisper_bray,
+      ellipse = TRUE, hull = FALSE, xlim = c(-.7, .7), ylim = c(-.3, 1.0),
+      main = "Distribution of Bray-Curtis dissimilarity", col = c("red", "orange", "gold", "green", "blue"))
+
+#### Distribution of Horn-Morisita Dissimilarity among different age classes. The ellipse for each group was based on one standard deviation and centered in median of each group.
+
+plot(res_betadisper_chao,
+      ellipse = TRUE, hull = FALSE, xlim = c(-.7, .7), ylim = c(-.3, 1.0),
+      main = "Distribution of Chao dissimilarity", col = c("red", "orange", "gold", "green", "blue"))
+
+#### Distribution of Horn-Morisita Dissimilarity among different age classes. The ellipse for each group was based on one standard deviation and centered in median of each group.
+
+
+boxplot(res_betadisper_jaccard,
+         col = c("red", "orange", "gold", "green", "blue"),
+         main = "Jaccard dissimilarity",
+         xlab = "Age of vegetation (Years)")
+#### Boxplot showing the Jaccard dissimilarity of each age class deviated from the median of all the dissimilarities.
+
+boxplot(res_betadisper_Morisita,
+         col = c("red", "orange", "gold", "green", "blue"),
+         main = "Morisita dissimilarity",
+         xlab = "Age of vegetation (Years)")
+#### Boxplot showing the Morisita dissimilarity of each age class deviated from the median of all the dissimilarities.
+
+boxplot(res_betadisper_horn_morisita,
+          col = c("red", "orange", "gold", "green", "blue"),
+          main = "Horn-Morisita dissimilarity",
+          xlab = "Age of vegetation (Years)")
+#### Boxplot showing the Horn-Morisita dissimilarity of each age class deviated from the median of all the dissimilarities.
+
+boxplot(res_betadisper_bray,
+          col = c("red", "orange", "gold", "green", "blue"),
+          main = "Bray-Curtis dissimilarity",
+          xlab = "Age of vegetation (Years)")
+#### Boxplot showing the Horn-Morisita dissimilarity of each age class deviated from the median of all the dissimilarities.
+
+boxplot(res_betadisper_chao,
+          col = c("red", "orange", "gold", "green", "blue"),
+          main = "Chao dissimilarity",
+          xlab = "Age of vegetation (Years)")
+#### Boxplot showing the Horn-Morisita dissimilarity of each age class deviated from the median of all the dissimilarities.
+
+
+#### Comparison of different groups
+anova(res_betadisper_jaccard         )
+# anova(res_betadisper_horn_morisita   )
+# anova(res_betadisper_Morisita         )
+# anova(res_betadisper_bray         )
+# anova(res_betadisper_chao         )
+
+scores(res_betadisper_jaccard        )
+# scores(res_betadisper_horn_morisita  )
+# scores(res_betadisper_Morisita        )
+# scores(res_betadisper_bray        )
+# scores(res_betadisper_chao        )
+
+#### Pairwise comparison
+TukeyHSD(res_betadisper_jaccard      )
+# TukeyHSD(res_betadisper_horn_morisita)
+# TukeyHSD(res_betadisper_Morisita     )
+# TukeyHSD(res_betadisper_bray     )
+# TukeyHSD(res_betadisper_chao     )
+
+
+par(las = 2)
+plot(TukeyHSD(res_betadisper_jaccard      ))
+
+#### Figure Multiple comparisons of the deviation between each pair of age classes for Jaccard dissimilairity
+
+par(las = 2)
+plot(TukeyHSD(res_betadisper_Morisita      ))
+
+#### Figure  Multiple comparisons of the deviation between each pair of age classes for Morisita dissimilairity
+par(las = 2)
+plot(TukeyHSD(res_betadisper_horn_morisita))
+
+par(las = 2)
+plot(TukeyHSD(res_betadisper_bray))
+
+par(las = 2)
+plot(TukeyHSD(res_betadisper_chao))
+
+#### Figure  Multiple comparisons of the deviation between each pair of age classes for Horn Morisita dissimilairity
+
+###################################################################################
+dist_jaccard       <- as.dist(as.matrix(dist_jaccard      ))
+dist_horn_morisita <- as.dist(as.matrix(dist_horn_morisita))
+dist_Morisita      <- as.dist(as.matrix(dist_Morisita     ))
+dist_bray          <- as.dist(as.matrix(dist_bray         ))
+dist_chao          <- as.dist(as.matrix(dist_chao         ))
+
+topo_dist          <- as.dist(as.matrix(topo_dist         ))
+soil_dist          <- as.dist(as.matrix(soil_dist         ))
+hk80_dist          <- as.dist(as.matrix(hk80_dist         ))
+age_dist           <- as.dist(as.matrix(age_dist          ))
+
+##### dist_jaccard
+mantel.correlog(dist_jaccard,  topo_dist)
+# mantel.correlog(dist_jaccard,  soil_dist)
+# mantel.correlog(dist_jaccard,  hk80_dist)
+# mantel.correlog(dist_jaccard,  age_dist )
+
+plot(mantel.correlog(dist_jaccard,  topo_dist))
+#### Mantel correlogram of Jaccard dissimilarity and distance of topography. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+
+plot(mantel.correlog(dist_jaccard,  soil_dist))
+#### Mantel correlogram of Jaccard dissimilarity and distance of soil properties. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+
+plot(mantel.correlog(dist_jaccard,  hk80_dist))
+#### Mantel correlogram of Jaccard dissimilarity and distance of spatial distance. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+
+plot(mantel.correlog(dist_jaccard,  age_dist ))
+#### Mantel correlogram of Jaccard dissimilarity and differences in community age. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+
+##### dist_Morisita
+mantel.correlog(dist_Morisita,  topo_dist)
+# mantel.correlog(dist_Morisita,  soil_dist)
+# mantel.correlog(dist_Morisita,  hk80_dist)
+# mantel.correlog(dist_Morisita,  age_dist )
+
+plot(mantel.correlog(dist_Morisita,  topo_dist))
+#### Mantel correlogram of Morisita dissimilarity and distance of topography. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+
+plot(mantel.correlog(dist_Morisita,  soil_dist))
+#### Mantel correlogram of Morisita dissimilarity and distance of soil properties. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+
+plot(mantel.correlog(dist_Morisita,  hk80_dist))
+#### Mantel correlogram of Morisita dissimilarity and spatial distance. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+
+plot(mantel.correlog(dist_Morisita,  age_dist ))
+#### Mantel correlogram of Morisita dissimilarity and differences in community age. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+
+##### dist_horn_morisita
+mantel.correlog(dist_horn_morisita,  topo_dist)
+# mantel.correlog(dist_horn_morisita,  soil_dist)
+# mantel.correlog(dist_horn_morisita,  hk80_dist)
+# mantel.correlog(dist_horn_morisita,  age_dist )
+
+plot(mantel.correlog(dist_horn_morisita,  topo_dist))
+#### Mantel correlogram of Horn-Morisita dissimilarity and distance of topography. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+
+plot(mantel.correlog(dist_horn_morisita,  soil_dist))
+#### Mantel correlogram of Horn-Morisita dissimilarity and distance of soil properties. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+
+plot(mantel.correlog(dist_horn_morisita,  hk80_dist))
+#### Mantel correlogram of Horn-Morisita dissimilarity and spatial distance. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+
+plot(mantel.correlog(dist_horn_morisita,  age_dist ))
+#### Mantel correlogram of Horn-Morisita dissimilarity and differences in community age. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+
+
+##### dist_bray
+mantel.correlog(dist_bray,  topo_dist)
+#mantel.correlog(dist_bray,  soil_dist)
+#mantel.correlog(dist_bray,  hk80_dist)
+#mantel.correlog(dist_bray,  age_dist )
+
+plot(mantel.correlog(dist_bray,  topo_dist))
+#### Mantel correlogram of Bray-Curtis dissimilarity and distance of topography. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+
+plot(mantel.correlog(dist_jaccard,  soil_dist))
+#### Mantel correlogram of Bray-Curtis dissimilarity and distance of soil properties. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+
+plot(mantel.correlog(dist_jaccard,  hk80_dist))
+#### Mantel correlogram of Bray-Curtis dissimilarity and distance of spatial distance. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+
+plot(mantel.correlog(dist_jaccard,  age_dist ))
+#### Mantel correlogram of Bray-Curtis dissimilarity and differences in community age. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+
+##### dist_chao
+mantel.correlog(dist_chao,  topo_dist)
+#mantel.correlog(dist_chao,  soil_dist)
+#mantel.correlog(dist_chao,  hk80_dist)
+#mantel.correlog(dist_chao,  age_dist )
+
+plot(mantel.correlog(dist_chao,  topo_dist))
+#### Mantel correlogram of Chao dissimilarity and distance of topography. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+
+plot(mantel.correlog(dist_chao,  soil_dist))
+#### Mantel correlogram of Chao dissimilarity and distance of soil properties. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+
+plot(mantel.correlog(dist_chao,  hk80_dist))
+#### Mantel correlogram of Chao dissimilarity and distance of spatial distance. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+
+plot(mantel.correlog(dist_chao,  age_dist ))
+#### Mantel correlogram of Chao dissimilarity and differences in community age. Mantel Correlograms could reveal the detailed relationship under each category of distance, the significance was determined using permutational Mantel test (Mantel, N. 1967) for each class.
+```
+
+# 分析不同演替阶段生活型组成的变化
+```{R}
+############################################################
+##### R script for Analysing change of growth forms ####
+############################################################
+######### Author: Jinlong Zhang ############################
+######### Date: 18 MAY 2018 ################################
+######### Email: jinlongzhang01@gmail.com #################
+############################################################
+
+setwd("C:/Users/jlzhang/Dropbox/community_analysis/data")
+rm(list = ls())
+library(openxlsx)
+library(reshape2)
+library(ggplot2)
+library(ggthemes)
+library(stringr)
+
+growth_form <- read.xlsx("SI Table 4. Species growth forms.xlsx")
+pie(table(growth_form$growth_form))
+
+spmat <- read.csv("SI Table 3. Sawaid's abundance matrix at TMS 20170125.csv", row.names = 1)
+endat <- read.csv("SI Table 2. Environments_combined_update20170928.csv")
+temp_mat <- table(endat$PLOT, endat$AGE_MEDIAN)
+rownames_temp_mat <-  row.names(temp_mat)
+
+spmat[is.na(spmat)] <- 0
+
+#### plots 7yr
+plots_7yr  <- rownames_temp_mat[temp_mat[,1] > 0]
+
+#### plots 20yr
+plots_20yr <- rownames_temp_mat[temp_mat[,2] > 0]
+
+#### plots 39yr
+plots_39yr <- rownames_temp_mat[temp_mat[,3] > 0]
+
+#### plots 61yr
+plots_61yr <- rownames_temp_mat[temp_mat[,4] > 0]
+
+#### plots >70yr
+plots_70yr <- rownames_temp_mat[temp_mat[,5] > 0]
+
+splist <- row.names(spmat)
+
+### Checklist of species for 7yr
+splist_7yr <- splist[rowSums(spmat[,plots_7yr])>0]
+### Checklist of species for 20yr
+splist_20yr <- splist[rowSums(spmat[,plots_20yr])>0]
+### Checklist of species for 39yr
+splist_39yr <- splist[rowSums(spmat[,plots_39yr])>0]
+### Checklist of species for 61yr
+splist_61yr <- splist[rowSums(spmat[,plots_61yr])>0]
+### Checklist of species for >70yr
+splist_70yr <- splist[rowSums(spmat[,plots_70yr])>0]
+
+spdf_7yr  <- data.frame(species = splist_7yr, sp = splist_7yr )
+spdf_20yr <- data.frame(species = splist_20yr,sp = splist_20yr)
+spdf_39yr <- data.frame(species = splist_39yr,sp = splist_39yr)
+spdf_61yr <- data.frame(species = splist_61yr,sp = splist_61yr)
+spdf_70yr <- data.frame(species = splist_70yr,sp = splist_70yr)
+
+growth_form_7yr  <- merge(x = spdf_7yr , y = growth_form, by = "species", all.x = TRUE)[,c("growth_form")]
+growth_form_20yr <- merge(x = spdf_20yr, y = growth_form, by = "species", all.x = TRUE)[,c("growth_form")]
+growth_form_39yr <- merge(x = spdf_39yr, y = growth_form, by = "species", all.x = TRUE)[,c("growth_form")]
+growth_form_61yr <- merge(x = spdf_61yr, y = growth_form, by = "species", all.x = TRUE)[,c("growth_form")]
+growth_form_70yr <- merge(x = spdf_70yr, y = growth_form, by = "species", all.x = TRUE)[,c("growth_form")]
+
+growth_form_percentage_7yr  <- table(growth_form_7yr )/sum(table(growth_form_7yr ))*100
+growth_form_percentage_20yr <- table(growth_form_20yr)/sum(table(growth_form_20yr))*100
+growth_form_percentage_39yr <- table(growth_form_39yr)/sum(table(growth_form_39yr))*100
+growth_form_percentage_61yr <- table(growth_form_61yr)/sum(table(growth_form_61yr))*100
+growth_form_percentage_70yr <- table(growth_form_70yr)/sum(table(growth_form_70yr))*100
+
+growth_form_percentage <- rbind(
+    t(growth_form_percentage_7yr),
+    t(growth_form_percentage_20yr),
+    t(growth_form_percentage_39yr),
+    t(growth_form_percentage_61yr),
+    t(growth_form_percentage_70yr))
+
+row.names(growth_form_percentage) <- c("7", "20", "39", "61", "70" )
+
+growth_form_percentage_melt <- melt(growth_form_percentage)
+colnames(growth_form_percentage_melt) <- c("Age", "growth_form", "Percentage")
+
+#### Change of Growth Forms Based on Number of Species 
+# tiff(filename = "Change of growth_forms.tiff",width = 5000, height = 3000, res = 800, compression = "lzw")
+ggplot(data = growth_form_percentage_melt, aes(x=str_pad(as.character(Age), 2, pad ="0"), y=Percentage, fill=growth_form)) +
+    geom_bar(stat="identity", width=0.5) + xlab("Forest Age (Years)") + ylab("Percent %") +
+    ggtitle("Change of growth forms (Presence-Absence)") +
+    guides(fill=guide_legend(title="Growth form")) +  theme_bw()
+# dev.off()
+
+#################################################################
+#################################################################
+#################################################################
+
+##### Proportion of individuals
+library(openxlsx)
+growth_form <- read.xlsx("SI Table 4. Species growth forms.xlsx")
+pie(table(growth_form$growth_form))
+
+spmat <- read.csv("SI Table 3. Sawaid's abundance matrix at TMS 20170125.csv", row.names = 1)
+endat <- read.csv("SI Table 2. Environments_combined_update20170928.csv")
+temp_mat <- table(endat$PLOT, endat$AGE_MEDIAN)
+rownames_temp_mat <-  row.names(temp_mat)
+
+spmat[is.na(spmat)] <- 0
+
+#### plots 7yr
+plots_7yr  <- rownames_temp_mat[temp_mat[,1] > 0]
+#### plots 20yr
+plots_20yr <- rownames_temp_mat[temp_mat[,2] > 0]
+#### plots 39yr
+plots_39yr <- rownames_temp_mat[temp_mat[,3] > 0]
+#### plots 61yr
+plots_61yr <- rownames_temp_mat[temp_mat[,4] > 0]
+#### plots >70yr
+plots_70yr <- rownames_temp_mat[temp_mat[,5] > 0]
+splist <- row.names(spmat)
+
+### Checklist of species for 7yr
+splist_7yr  <- rep(splist, rowSums(spmat[,plots_7yr]))
+### Checklist of species for 20yr
+splist_20yr <- rep(splist, rowSums(spmat[,plots_20yr]))
+### Checklist of species for 39yr
+splist_39yr <- rep(splist, rowSums(spmat[,plots_39yr]))
+### Checklist of species for 61yr
+splist_61yr <- rep(splist, rowSums(spmat[,plots_61yr]))
+### Checklist of species for >70yr
+splist_70yr <- rep(splist, rowSums(spmat[,plots_70yr]))
+
+spdf_7yr  <- data.frame(species = splist_7yr, sp = splist_7yr )
+spdf_20yr <- data.frame(species = splist_20yr,sp = splist_20yr)
+spdf_39yr <- data.frame(species = splist_39yr,sp = splist_39yr)
+spdf_61yr <- data.frame(species = splist_61yr,sp = splist_61yr)
+spdf_70yr <- data.frame(species = splist_70yr,sp = splist_70yr)
+
+growth_form_7yr  <- merge(x = spdf_7yr , y = growth_form, by = "species", all.x = TRUE)[,c("growth_form")]
+growth_form_20yr <- merge(x = spdf_20yr, y = growth_form, by = "species", all.x = TRUE)[,c("growth_form")]
+growth_form_39yr <- merge(x = spdf_39yr, y = growth_form, by = "species", all.x = TRUE)[,c("growth_form")]
+growth_form_61yr <- merge(x = spdf_61yr, y = growth_form, by = "species", all.x = TRUE)[,c("growth_form")]
+growth_form_70yr <- merge(x = spdf_70yr, y = growth_form, by = "species", all.x = TRUE)[,c("growth_form")]
+
+growth_form_percentage_7yr  <- table(growth_form_7yr )/sum(table(growth_form_7yr ))*100
+growth_form_percentage_20yr <- table(growth_form_20yr)/sum(table(growth_form_20yr))*100
+growth_form_percentage_39yr <- table(growth_form_39yr)/sum(table(growth_form_39yr))*100
+growth_form_percentage_61yr <- table(growth_form_61yr)/sum(table(growth_form_61yr))*100
+growth_form_percentage_70yr <- table(growth_form_70yr)/sum(table(growth_form_70yr))*100
+
+growth_form_percentage <- rbind(
+    t(growth_form_percentage_7yr),
+    t(growth_form_percentage_20yr),
+    t(growth_form_percentage_39yr),
+    t(growth_form_percentage_61yr),
+    t(growth_form_percentage_70yr))
+
+row.names(growth_form_percentage) <- c("07", "20", "39", "61", "70" )
+
+library(reshape2)
+library(ggplot2)
+library(ggthemes)
+
+growth_form_percentage_melt <- melt(growth_form_percentage)
+colnames(growth_form_percentage_melt) <- c("Age", "growth_form", "Percentage")
+
+
+#### Change of growth_forms based on number of individuals
+# tiff(filename = "Change of growth_forms based on individuals.tiff",width = 5000, height = 3000, res = 800, compression = "lzw")
+ggplot(data = growth_form_percentage_melt, aes(x=str_pad(as.character(Age), 2, pad ="0"), y=Percentage, fill=growth_form)) +
+    geom_bar(stat="identity", width=0.5) + xlab("Forest Age (Years)") + ylab("Percent %") +
+    ggtitle("Change of growth forms (Abundance based)") +
+    guides(fill=guide_legend(title="Growth form")) + theme_bw()
+# dev.off()
+
+```
+
+# 提取丰富度最高的种
+```{R}
+############################################################
+##### R script for Extracting the Most Abundant Species ####
+############################################################
+######### Author: Jinlong Zhang ############################
+######### Date: 18 MAY 2018 ################################
+######### Email: jinlongzhang01@gmail.com #################
+############################################################
+
+setwd("C:/Users/jlzhang/Dropbox/community_analysis/data")
+rm(list = ls())
+library(openxlsx)
+habit <- read.xlsx("SI Table 4. Species habits.xlsx")
+spmat <- read.csv("SI Table 3. Sawaid's abundance matrix at TMS 20170125.csv", row.names = 1)
+spmat[is.na(spmat)] <- 0
+
+tspmat <- t(spmat)
+apply(tspmat, 1, sum)
+
+extract.high.abundance <- function(x, nspecies = 5){
+    nspecies = 5
+    selected <- rep(FALSE, ncol(x))
+    for (i in 1:nrow(x)){
+        selected <- (selected|(x[i,] %in% sort(x[i,], decreasing = TRUE)[1:nspecies]))
+    }
+    res <- x[,selected]
+    return(res)
+}
+
+res <- extract.high.abundance(tspmat)
+#### write.xlsx(t(res), "most_abundant_species_sawaid.xlsx", row.names = TRUE)
+
+```
+
+# NMDS分析，用以展示不同演替阶段样方物种组成相似性的关系
+```{R}
+###################################################
+##### R script for conducting  NMDS analysis ######
+###################################################
+######### Author: Jinlong Zhang ###################
+######### Date: 18 MAY 2018 #######################
+######### Email: jinlongzhang01@gmail.com ########
+###################################################
+
+setwd("C:/Users/jlzhang/Dropbox/community_analysis/data")
+rm(list = ls())
+library(vegan)
+library(ggplot2)
+library(labdsv)
+library(ggthemes)
+
+#### load and transform the data
+spmat <- read.csv("SI Table 3. Sawaid's abundance matrix at TMS 20170125.csv",
+                  header = TRUE, row.names = 1)
+spmat[is.na(spmat)] <- 0
+tspmat <- t(spmat)
+
+#### Read the environment data
+envdat <- read.csv("SI Table 2. Environments_combined_update20170928.csv",
+                   header = TRUE, row.names = 1)
+
+envdat$TOPO_ASPECT_DEC_SIN <- sin(envdat$ASPECT_DEC/(180/pi))
+
+attach(envdat)
+env <- data.frame(SOIL_PH, SOIL_OM, SOIL_N, SOIL_M,
+                   SOIL_C, SOIL_C_N_RATIO, SOIL_S, SOIL_SI, SOIL_CL,
+                   TOPO_ELV, TOPO_SLP, TOPO_CURV, TOPO_ASPECT_DEC_SIN)
+spatial <- data.frame(POINT_X, POINT_Y)
+age     <- AGE_MEDIAN
+detach(envdat)
+
+colors_new <- c("red", "pink", "orange", "lightgreen", "blue")
+
+## 2. Nonmetric Multidimensional Scaling with Stable Solution from Random Starts, Axis Scaling and Species Scores
+## horn
+NMDS_horn <- metaMDS(tspmat, distance = "horn", autotransform = FALSE, k = 2, try = 100)
+MDS1 = NMDS_horn$points[,1]
+MDS2 = NMDS_horn$points[,2]
+LAB  = row.names(NMDS_horn$points)
+NMDS = data.frame(MDS1 = MDS1, MDS2 = MDS2, age = as.factor(age), LAB = LAB)
+centers <- aggregate(NMDS[, 1:2], by=list(age=NMDS$age), mean)
+centers$LAB <- paste("Center for age:", as.character(centers$age))
+centers2 <- centers[c(2,3,1,4)]
+### colnames(centers) <- c("age", "x", "y")
+
+# tiff(filename = "NMDS_horn.tiff", width = 4800, height = 4800, res = 600, compression = "lzw")
+ggplot(NMDS, aes(x=MDS1, y=MDS2, col=age, label = NMDS$LAB)) +
+ geom_point() +
+ stat_ellipse(level = 0.60, show.legend = TRUE,  type = "norm", lwd = 1.2) +
+ theme_bw() +
+ labs(title = "Nonmetric Multidimensional Scaling (Horn)")+
+ scale_color_manual(values= colors_new) +
+ xlab("NMDS 1") +
+ ylab("NMDS 2") +
+ theme_base() +
+ geom_text(check_overlap = TRUE, aes(y = MDS2 + 0.035), show.legend=FALSE)
+# dev.off()
+
+
+#### NMDS_jaccard
+NMDS_jaccard <- metaMDS(tspmat, distance = "jaccard", autotransform = FALSE, binary= TRUE, k = 2, try = 100)
+MDS1 = NMDS_jaccard$points[,1]
+MDS2 = NMDS_jaccard$points[,2]
+LAB  = row.names(NMDS_jaccard$points)
+NMDS = data.frame(MDS1 = MDS1, MDS2 = MDS2, age = as.factor(age), LAB = LAB)
+centers <- aggregate(NMDS[, 1:2], by=list(age=NMDS$age), mean)
+centers$LAB <- paste("Center for age:", as.character(centers$age))
+centers2 <- centers[c(2,3,1,4)]
+### colnames(centers) <- c("age", "x", "y")
+
+# tiff(filename = "NMDS_jaccard.tiff", width = 4800, height = 4800, res = 600, compression = "lzw")
+ggplot(NMDS, aes(x=MDS1, y=MDS2, col=age, label = NMDS$LAB)) +
+ geom_point() +
+ stat_ellipse(level = 0.60, show.legend = TRUE,  type = "norm", lwd = 1.2) +
+ theme_bw() +
+ labs(title = "Nonmetric Multidimensional Scaling (Jaccard)")+
+ scale_color_manual(values= colors_new) +
+ xlab("NMDS 1") +
+ ylab("NMDS 2") +
+ theme_base() +
+ geom_text(check_overlap = TRUE, aes(y = MDS2 + 0.035), show.legend=FALSE)
+# dev.off()
+
+#### 3. "morisita" metaMDS not converge
+NMDS_jaccard
+NMDS_morisita <- metaMDS(tspmat, distance = "morisita", autotransform = FALSE, k = 2, try = 100)
+MDS1 = NMDS_morisita$points[,1]
+MDS2 = NMDS_morisita$points[,2]
+LAB  = row.names(NMDS_morisita$points)
+NMDS = data.frame(MDS1 = MDS1, MDS2 = MDS2, age = as.factor(age), LAB = LAB)
+centers <- aggregate(NMDS[, 1:2], by=list(age=NMDS$age), mean)
+centers$LAB <- paste("Center for age:", as.character(centers$age))
+centers2 <- centers[c(2,3,1,4)]
+### colnames(centers) <- c("age", "x", "y")
+
+# tiff(filename = "NMDS_morisita.tiff", width = 4800, height = 4800, res = 600, compression = "lzw")
+ggplot(NMDS, aes(x=MDS1, y=MDS2, col=age, label = NMDS$LAB)) +
+ geom_point() +
+ stat_ellipse(level = 0.60, show.legend = TRUE,  type = "norm", lwd = 1.2) +
+ theme_bw() +
+ labs(title = "Nonmetric Multidimensional Scaling (Morisita)")+
+ scale_color_manual(values= colors_new) +
+ xlab("NMDS 1") +
+ ylab("NMDS 2") +
+ theme_base() +
+ geom_text(check_overlap = TRUE, aes(y = MDS2 + 0.035), show.legend=FALSE)
+# dev.off()
+
+#### "bray"
+NMDS_bray <- metaMDS(tspmat, distance = "bray", autotransform = FALSE, k = 2, try = 100)
+MDS1 = NMDS_bray$points[,1]
+MDS2 = NMDS_bray$points[,2]
+LAB  = row.names(NMDS_bray$points)
+NMDS = data.frame(MDS1 = MDS1, MDS2 = MDS2, age = as.factor(age), LAB = LAB)
+centers <- aggregate(NMDS[, 1:2], by=list(age=NMDS$age), mean)
+centers$LAB <- paste("Center for age:", as.character(centers$age))
+centers2 <- centers[c(2,3,1,4)]
+### colnames(centers) <- c("age", "x", "y")
+
+# tiff(filename = "NMDS_bray.tiff", width = 4800, height = 4800, res = 600, compression = "lzw")
+ggplot(NMDS, aes(x=MDS1, y=MDS2, col=age, label = NMDS$LAB)) +
+ geom_point() +
+ stat_ellipse(level = 0.60, show.legend = TRUE,  type = "norm", lwd = 1.2) +
+ theme_bw() +
+ labs(title = "Nonmetric Multidimensional Scaling (Bray-Curtis)")+
+ scale_color_manual(values= colors_new) +
+ xlab("NMDS 1") +
+ ylab("NMDS 2") +
+ theme_base() +
+ geom_text(check_overlap = TRUE, aes(y = MDS2 + 0.035), show.legend=FALSE)
+# dev.off()
+
+#### "chao"
+NMDS_chao <- metaMDS(tspmat, distance = "chao",autotransform = FALSE, k = 2, try = 100)
+MDS1 = NMDS_chao$points[,1]
+MDS2 = NMDS_chao$points[,2]
+LAB  = row.names(NMDS_chao$points)
+NMDS = data.frame(MDS1 = MDS1, MDS2 = MDS2, age = as.factor(age), LAB = LAB)
+centers <- aggregate(NMDS[, 1:2], by=list(age=NMDS$age), mean)
+centers$LAB <- paste("Center for age:", as.character(centers$age))
+centers2 <- centers[c(2,3,1,4)]
+### colnames(centers) <- c("age", "x", "y")
+
+# tiff(filename = "NMDS_chao.tiff", width = 4800, height = 4800, res = 600, compression = "lzw")
+ggplot(NMDS, aes(x=MDS1, y=MDS2, col=age, label = NMDS$LAB)) +
+ geom_point() +
+ stat_ellipse(level = 0.60, show.legend = TRUE,  type = "norm", lwd = 1.2) +
+ theme_bw() +
+ labs(title = "Nonmetric Multidimensional Scaling (Chao)")+
+ scale_color_manual(values= colors_new) +
+ xlab("NMDS 1") +
+ ylab("NMDS 2") +
+ theme_base() +
+ geom_text(check_overlap = TRUE, aes(y = MDS2 + 0.035), show.legend=FALSE)
+# dev.off()
+```
