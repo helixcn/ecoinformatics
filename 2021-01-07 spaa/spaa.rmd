@@ -1,0 +1,448 @@
+---
+title: "种间联结和生态位重叠的计算：spaa程序包"
+author: "Jinlong Zhang"
+date: "6/25/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+群落尺度上，物种的生态位是指其在群落中利用资源的能力(张金屯, 2004)。生态位在物种的多度，群落多样性维持等多方面具有重要的意义(杨利民等, 2001)。生态位可以通过物种的生态位的宽度，物种生态位重叠等量化，国内在这方面已经有较多研究（如孙中伟和赵士洞, 1996; 郭志华等, 1997; 史作民等, 2001; 李军玲和张金屯, 2010; 王乃江等, 2010），但分析过程缺乏统一的平台，很容易引入错误，而且群落数据处理及绘图等也都较为繁琐，为了简化种间联结和生态位重叠的相关流程，我们编写了spaa程序包。
+
+spaa是SPecies Association Analysis 的缩写，该程序包可对群落数据进行简单处理，计算物种的生态位宽度和种间的生态位重叠，绘制相应的半矩阵图等。
+
+本文介绍spaa的安装、主要函数并介绍相应的分析流程。
+
+# 1. spaa的安装
+
+spaa程序包由R语言写成，源代码完全公开，用户可以在任何一个CRAN镜像下载。
+
+安装方法为：在R界面输入命令`install.packages("spaa")`，R软件会自动提示选择一个镜像，自动下载该程序包并安装好。
+
+最新的版本代码保存在github上，https://github.com/helixcn/spaa，安装的命令为：
+
+```R
+library(devtools)
+install_github("helixcn/spaa")
+```
+
+# 2. spaa的函数和数据集
+
+## 2.1 函数
+
+- `data2mat`： 将野外记录转换为样地物种矩阵
+- `freq.calc`： 计算相对多度
+- `niche.overlap`： 计算物种间的生态位重叠
+- `niche.overlap.boot`： 对生态位重叠求bootstrap置信区间
+- `niche.overlap.boot.pair`： 对每两个种之间求生态位重叠的Boostrap置信区间
+- `niche.overlap.pair`： 计算每两个种之间的生态位重叠
+- `niche.width`： 计算生态位宽度
+- `plotlowertri`： 绘制半矩阵图
+- `plotnetwork`： 绘制网络相关性图
+- `sp.assoc`： 计算群落总体的关联性
+- `sp.pair`： 计算物种两两之间的关联性
+- `sub.sp.matrix`： 基于相对频度，给出样方内部分物种的数据
+
+## 2.2 内置的数据集
+
+- `splist`： 示例数据的科属种信息
+- `datasample`： 示例数据
+- `testdata`： 示例数据
+
+# 3. 计算生态位宽度举例
+## 3.1 群落数据转换为矩阵
+
+计算多样性指数、种间联结、生态位宽度、重叠或进行排序分析时，群落数据一般都需要转换为表1的格式，即每一行表示一个样方，每一列表示一个物种，数字表示物种在样方中出现的个体数。
+
+表1 群落物种矩阵
+
+|       | sp1  | sp2  | sp3  | sp4  | sp5  | sp6  | sp7  |
+| ----- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
+| plot1 | 3    | 6    | 1    | 2    | 1    | 0    | 0    |
+| plot2 | 8    | 0    | 30   | 0    | 0    | 0    | 0    |
+| plot3 | 0    | 1    | 0    | 2    | 0    | 1    | 3    |
+
+实际情况下，野外数据一般用两种方式记录：1. 每木调查表格 和 2. 普通群落调查表格
+
+### 3.1.2 每木调查表格
+
+每木调查表格，常作为森林监测样地，也就是大样地的数据格式。这种格式中，每个分枝单独为一行，每棵树单独编号，各列名称一般为：
+
+1. 样方号
+2. 编号
+3. 物种名
+4. x坐标
+5. y坐标
+6. 分枝号（0为主干，1为第一分枝，2为第二分枝以此类推）
+7. 胸径
+8. 高度
+9. 生存状态（生、立枯、倒木等）
+10. 附注
+
+表1. 森林监测样地每木记录
+
+|plot| tag | species | x | y | branch| dbh |height|status|remark|
+|--------| -------- | ------- | --------- |--------- |--------- |--------- |--------- |--------- |--------- |
+|0101|  btm0101001   | sp1     |  1.5       |  5.8     |   0    |   15    |  12     | alive      |tree|
+|0101|  btm0101002   | sp2     |   3.3      | 12.1     |   0    |   12    |  10     | alive      |tree |
+... ...
+
+假设数据为data.frame, 名称为btmdata, 各列名称如上表所示，则生成群落物种矩阵可以用如下命令：
+
+```{R}
+plot <- c("0101", "0101", "0102")
+tag <- c("btm0101001", "btm0101002", "btm0101003" )
+species <- c("sp1", "sp2", "sp1")
+x <- c(1.5, 3.3, 4.1)
+y <- c(5.8, 12.1, 8.9)
+branch <- c(0, 0, 0)
+dbh  <- c(15, 12, 5)
+height   <- c(12, 10, 8)
+status  <- c("alive", "alive", "alive")
+remark  <- c("", "", "")
+
+btmdata <- data.frame(plot, tag, species, x, y, branch, dbh, height, status, remark)
+# 以上为生成样地数据
+
+# 以下为生成群落-物种丰富度矩阵
+btm <- table(btmdata$plot, btmdata$species)
+btm
+```
+
+### 3.1.2 群落调查表格
+
+普通群落调查表要简单很多，一般第一列为样方名，第二列为物种名，第三列为该种在样方中的个体数，其数值一般为整数，若第三列为重要值等，也可能为小数。
+
+表2 样方调查表格
+
+| plot | species | abundance |
+| -------- | ------- | --------- |
+| plot1    | sp1     | 3         |
+| plot1    | sp2     | 6         |
+| plot1    | sp3     | 1         |
+| plot1    | sp4     | 2         |
+| plot1    | sp5     | 1         |
+| plot2    | sp1     | 8         |
+| plot2    | sp3     | 30        |
+| plot3    | sp4     | 2         |
+| plot3    | sp2     | 1         |
+| plot3    | sp6     | 1         |
+| plot3    | sp7     | 3         |
+
+
+这种情况下，要将其转换为群落-物种矩阵，则可以用下面的命令：
+
+```{R}
+library(reshape2)
+library(spaa)
+data(datasample)
+
+# melt需要将行名作为data.frame中的一列
+datasample2 <- cbind(plot = row.names(datasample), datasample)
+
+# 将修改后的matrix转换为数据记录的常用格式
+aaa <- melt(data = datasample2,
+            id.vars = "plot",
+            measure.vars = 2:ncol(datasample2),
+            variable.name = "species",
+            value.name = "abundance",
+            factorsAsStrings = TRUE)
+
+# 因有些样方中物种没有出现，所以是0.00
+aaa1 <- aaa[aaa$abundance > 0, ]
+head(aaa1)
+
+bbb <- acast(aaa1, 
+             formula = plot ~ species, 
+             value.var = "abundance", 
+             fill = 0)
+bbb
+```
+
+如果abundance一列不含小数， 则可以用spaa程序包提供的`data2mat()`函数转换。需要注意，各列的名称要分别命名为`"plotname","species","abundance"`，经过这样标准化处理后，即可通过`data2mat()`转换为矩阵。
+
+调用方式为`data2mat(testdata)`
+
+## 3.2 计算种间联结
+
+种间联结，包括群落总体联结和种与种之间的关联(周先叶等, 2000; 史作民等, 2001; 张思玉和郑世群, 2002; 张志勇等, 2003; 康冰等, 2005; 王文进等, 2007; 王乃江等, 2010)。
+
+### 3.2.1 群落总体的物种联结
+
+用`sp.assoc`函数计算，一般用以下指数：
+
+#### 1. 物种相对多度的方差:
+
+![](./equations/clip_image001.png)（公式 1）
+
+#### 2. 物种数的方差
+
+![](./equations/clip_image002.png)（公式 2）
+
+#### 3. 相对多度频率
+
+![](./equations/clip_image003.png)（公式 3）
+
+#### 4. 方差比率
+
+![](./equations/clip_image004.png)（公式 4）
+
+如果*VR* > 1 正相关；如果*VR* < 1 负相关
+
+*W*统计量用来检验方差比率的显著程度(张倩媚等, 2006) 95%置信区间为 Chi0.95,N2 < *W* <  Chi0.05, N2
+
+![](./equations/clip_image005.png)（公式 5）
+
+在公式1-5中，*N*为样方数，*S*为总物种数，*n*为一个物种所占据的样方数，*T_j*为每个样方的物种数，*t*为所有样方的物种数平均值。
+
+### 3.2.2 种间联结的显著性检验
+
+一般采用2X2列联表检验。假设有物种A和物种B在各样方中的个体数, *a*, *b*, *c*, *d*分别表示两者之间共同出现和不出现的情况:
+
+- *a*：物种A和物种B共同占据的样方数；
+- *b*：只出现物种A的样方数；
+- *c*：只出现物种B的样方数；
+- *d*：物种A和物种B都不出现的样方数；
+- *n*：所有样方数*n* = *a*+*b*+*c*+*d*(张金屯, 2004)
+
+判断两个种之间是否存在显著的关联时，常常应用经过Yates校正过的卡方。
+
+#### 1. 经过Yates矫正的卡方检验显著性（公式 6）
+
+![](./equations/clip_image006.png)（公式 6）
+
+此外，V比值以及Jaccard指数、Ochiai指数、Dice指数、点相关指数PCC、Pearson相关系数、Spearman相关系数体现也用来体现两个种之间相关性的紧密程度(郭志华等, 1997; 邢福和郭继勋, 2001; 张光明等, 2003; 张志勇等, 2003; 张金屯, 2004; 朱圣潮, 2006)，其公式分别为：
+
+#### 2. V比值（公式 7）
+
+![](./equations/clip_image007.png)（公式 7）
+
+#### 3. Jaccard指数（公式 8）
+
+![](./equations/clip_image008.png)（公式 8）
+
+#### 4. Ochiai指数（公式 9）:
+
+![](./equations/clip_image009.png)（公式 9）
+
+#### 5. Dice 指数（公式 10）
+
+![](./equations/clip_image010.png)（公式 10）
+
+#### 6. *PCC*：点相关系数（公式 11）
+
+![](./equations/clip_image011.png)（公式 11）
+
+#### 7. 连接系数*AC*
+
+- 若ad >= bc:
+
+![](./equations/clip_image012.png)（公式 12）
+
+- 若bc > ad, 且 d >= a,则:
+
+![](./equations/clip_image013.png)（公式 13）
+
+- 若bc > ad且 d < a，则:
+
+![](./equations/clip_image014.png)（公式 14）
+
+#### 8. Spearman秩相关系数（公式 15）
+
+![](./equations/clip_image015.png)（公式 15）
+
+#### 9. Pearson相关系数（公式 16）
+
+![](./equations/clip_image016.png)（公式 16）
+
+上述指数通过调用spaa的`sp.pair()`函数即可得到，结果以list的形式给出。
+
+## 3.3 计算生态位宽度
+
+生态位宽度，常用Levins或Shannon指数来度量(吴大荣, 2001; 向悟生等, 2002; 张桂莲和张金屯, 2002; 胡正华和于明坚, 2005; 何小娟等, 2008; 钱逸凡等, 2012)，公式如下：
+
+### 1. Levins生态位宽度
+
+![](./equations/clip_image017.png)（公式 17）
+
+### 2. Shannon生态位宽度
+
+![](./equations/clip_image018.png)（公式 18）
+
+其中*B_i*为第*i*种的生态位宽度，*j*表示样方，*r*表示样方的数量。
+
+spaa程序包的`niche.width()`函数可用来计算每个种的生态位宽度。调用方法为`niche.width(mat, method = c("shannon", "levins"))`，其中 `mat`为样方-物种矩阵，`method`选择其一即可。
+
+## 3.4 计算生态位重叠的函数
+
+spaa提供了`niche.overlap()`函数计算所有种种对之间的生态位重叠系数，包括：`levins", "schoener", "petraitis", "pianka", "morisita`等，返回结果则为距离矩阵。各指数定义如下：
+
+### 1. Levins生态位重叠指数
+
+![](./equations/clip_image019.png)（公式 19）
+
+### 2. Schoener生态位重叠指数
+
+![](./equations/clip_image020.png)（公式 20）
+
+### 3. Petraitis特定重叠指数
+
+![](./equations/clip_image021.png)（公式 21）
+
+### 4. Pianka重叠指数
+
+![](./equations/clip_image022.png)（公式 22）
+
+### 5. Czechanowski index
+
+![](./equations/clip_image023.png)（公式 23）
+
+### 6. 简化的Morisita指数
+
+![](./equations/clip_image024.png)（公式 24）
+
+其中*O_ik*为种*i*和种*k*的生态位重叠系数，*P_ij*和*P_kj*分别为种*i*和种*k*在第*j*个样方的多度，*r*为样方的总数，*e*为自然对数的底。
+
+调用方法举例：
+
+```R
+data(datasample)
+niche.overlap(mat, method = c("levins", "schoener", "petraitis", "pianka", "czech", "morisita"))
+```
+
+其中，`mat`为群落物种分布矩阵， `method`选择`"levins", "schoener", "petraitis", "pianka", "czech", "morisita"`其中任意一种。
+
+若只想得到两个物种之间的生态位重叠系数，则需要运行niche.overlap.pair()函数。调用方式为：
+
+```R
+niche.overlap.pair(vectA, vectB, method = c("pianka",  "schoener", "petraitis",  "czech",  "morisita",  "levins"))
+```
+
+其中`VectA`和`vectB`分别为两个向量，表示在对应的群落中物种A和物种B的个体数， `method`则需要选取`"pianka","schoener","petraitis","czech","morisita","levins"`中的任意一个。
+
+## 3.5 生态位宽度置信区间的自展分析
+
+为了估计两个种之间的生态位重叠的置信区间，spaa提供了生态位重叠的自展分析bootstrap函数`niche.overlap.boot()`。该函数各参数如下：
+
+```R
+niche.overlap.boot.pair(vectorA, vectorB, method = c("levins",
+     "schoener", "petraitis", "pianka", "czech", "morisita"),
+      times = 1000, quant = c(0.025, 0.975))
+```
+其中`mat`为输入的物种分布矩阵。`method`是要选择的方法，`times`为bootstrap进行的次数，quant为生态位重叠指数的分位数，默认为0.025和0.975，即95%置信区间。
+
+在计算过程中，`niche.overlap.boot()`会调用`niche.overlap.boot.pair()`，先计算物种两两之间的生态位重叠置信区间。一般情况下，用户均无需调用`niche.overlap.boot.pair()`。
+
+![](./equations/boot.jpg)
+
+图1 物种生态位重叠的bootstrap结果
+
+各列的含义分别如下：
+
+- 第1列，两个列的种名Castanopsis.eyrei-Schima.superba，表示对应的种对
+- 第2列，Observed 实际的物种生态位重叠指数
+- 第3列，Boot mean 表示bootstrap结果的算数平均值
+- 第4列，Boot std表示生态位重叠指数的standard deviation
+- 第5列，Boot CI1 表示物种生态位重叠指数的下分位数，默认为 0.025
+- 第6列，Boot CI2 表示物种生态位重叠指数的上分位数，默认为 0.975
+
+当某个样方中，缺少一个物种时，在bootstrap的过程中，会出现NaN，这表明，在根据公式计算生态位重叠的过程中，出现了除数为0的情况。在随机有放回抽样中，这种物种出现组合是可能发生的，此时的bootstrap结果以及CI的结构都会变得不准确，建议此时要审慎考虑，且不要使用spaa给出的结果。
+
+## 3.6 绘图
+
+### 3.6.1 物种关联半矩阵图
+spaa程序包还提供了一些函数，如plotlowertri用来绘制物种关联半矩阵图等。
+
+![](./equations/correlation.jpeg)
+
+图2 plotlowertri()函数绘制的半矩阵图
+
+其函数调用方式为
+
+```
+plotlowertri(input, valuename = "r",  pchlist = c(19, 17, 15, 1, 5, 2, 7), interval = 6,  cex = 1, ncex = 1, int =1.2, add.number = TRUE, size = FALSE,  add.text = FALSE,  show.legend = TRUE, digits = 2)
+```
+
+用户可以对要显示的相关系数矩阵或者距离矩阵等，进行灵活调整（图1）。
+
+### 3.6.2 物种关联网络图
+
+显示物种之间的相互关联，还可以用网络图来表示，即用不同颜色，不同粗细以及点的形状，来连接各物种，表示种相互之间的关联，或者地点之间物种的相似性。spaa的plotnetwork()函数即可以用来绘制网络图（图3）。但是网络图不宜用来表示物种较多的情况，如超过了10个，则所绘制的线过多，难以清晰得表达物种之间或者地点之间的联系。
+
+![](./equations/network.jpeg)
+
+图3 plotnetwork()函数物种关联网络图
+
+## 3.7 其他函数
+### 3.7.1 物种筛选的函数
+除此之外，spaa还提供了用于物种筛选的函数，sub.sp.matrix(spmatrix, freq = 0.5, common = NULL)，可以选出频度大约某一数值的所有物种，Common参数则是选出最常见的多少个物种的数据，常见物种经过筛选之后，可以方便进行生态位宽度，生态位重叠等计算。
+
+### 3.7.2 地理距离计算和转换等
+spaa程序包另提供计算地理距离的函数lgeodist()，geodist()，给定两点的经纬度，可以计算两地点间的球面距离；deg2dec()，deg2dec()可以用来进行度分秒的转换；以及beta多样性计算过程中的转换函数dist2list(), turnover(), lab.mat()等，在beta多样性的计算，以及大样地数据的处理中可以提供帮助。
+
+# 致谢
+感谢丁琼、黄继红、李宗善博士在程序包开发中给予的帮助，感谢马进泽、张雪妮、姜俊、高梅香、方晓峰、泳游、Wei Li、Alfredo H. Zúñiga Á.、ÍsisArantes、Patricia Martínez、Wilson Martins da Silva、Jessica L. Sabo、Maud CHARLERY、杜忠毓、Diego Procopio、詹小豪、Luis Fernando Gatica Mora、赵文溪、肖正利、金超、邢冰伟、潘达、Vicente García-Navas、 江焕 、王路路、Clara Ruiz González、郭嘉兴、杜元宝、钟云婕、王晨赫、徐衡 、张玮、郝珉辉、Suhridam Roy、王媛、韩大勇、杨帆、姚雪芹、王晶、杨海涛、郑桂玲、岳鹏鹏、Mary Ann McLean、鲍志贵、Russell Bicknell， Joan Giménez Verdugo、Angela Andrea Camargo Sanabria、赵小丹、Ramiro Logares Haurié、Simone Cappellari Rabeling、Caitlin Keating-Bitonti、Ching-Maria VILLANUEV、Ingrid Rosario Sánchez- Galván、Aristide Andrianarimisa等提出宝贵意见。Kurt Hornik博士以及Brian Ripley教授，对程序包的编译提出过一些意见和建议，一并致谢。
+
+# 参考文献
+
+- Ackerly, D.D. 2003.Community assembly, niche conservatism, and adaptive evolution in changing environments. International Journal of Plant Sciences, 164:S165-S184.
+
+- Chase, J.M. .2003.Community assembly: when should history matter? Oecologia, 136:489-498.
+
+- Cornwell, W.K. and D.D. Ackerly.2009.Community assembly and shifts in plant trait distributions across an environmental gradient in coastal California. Ecological Monographs, 79:109-126.
+
+- Pavoine, S. and M.Bonsall.2011.Measuring biodiversity to explain community assembly: a unified approach. Biological Reviews, 86:792-812.
+
+- 方精云, 沈泽昊, 唐志尧, 王志恒.2004.中国山地植物物种多样性调查及若干技术规范. 生物多样性, 12(1):5-9.
+
+- 郭志华, 卓正大, 陈洁, 吴梅凤.1997.庐山常绿阔叶、落叶阔叶混交林乔木种群种间联结性研究. 植物生态学报, 21(5):424-432.
+
+- 韩文衡, 李先琨, 叶铎, 吕仕洪, 向悟生, 宋同清, 曹洪麟. 2009.桂西北喀斯特区常绿落叶阔叶混交林种群种间联结性与相关性. 山地学报, 27(6):719-726.
+
+- 何小娟, 洪滔, 何东进, 刘勇生, 卞莉莉, 陈笑玲, 苏炳霖. 2008.武夷山风景名胜区天然林主要种群生态位特征研究. 中国生态农业学报, 16(2):285-291.
+
+- 胡正华,于明坚. 2005.古田山青冈林优势种群生态位特征. 生态学杂志, 24(10):1159-1162.
+
+- 康冰, 刘世荣, 蔡道雄, 温远光, 史作民, 郭文福, 朱宏光, 张广军,刘磊. 2005.南亚热带人工杉木林灌木层物种组成及主要木本种间联结性. 生态学报, 25(9):2173-2179
+
+- 李军玲,张金屯. 2010.太行山中段植物群落草本植物优势种种间联结性分析. 草业科学, 27(9):119-123.
+
+- 马克平, 刘灿然,刘玉明. 1995.生物群落多样性的测度方法. Ⅱ. ß 多样性的测度方法, 3(1):38-43.
+
+- 牛克昌, 刘怿宁, 沈泽昊, 何芳良,方精云. 2009.群落构建的中性理论和生态位理论. 生物多样性, 17(6):579-593.
+
+- 钱逸凡, 伊力塔, 胡军飞, 张超, 余树全, 沈露,彭东琴. 2012.普陀山主要植物种生态位特征. 生态学杂志, 31(3):561-568.
+
+- 史作民, 刘世荣, 程瑞梅,蒋有绪. 2001.宝天曼落叶阔叶林种间联结性研究. 林业科学, 37(2):29-35.
+
+- 孙中伟,赵士洞. 1996.长白山北坡椴树阔叶红松林群落木本植物种间联结性与相关性研究. 应用生态学报, 7(1):1-5.
+
+- 王乃江, 张文辉, 陆元昌, 范少辉,王勇. 2010.陕西子午岭森林植物群落种间联结性. 生态学报, 30(1):67-78.
+
+- 王文进, 张明, 刘福德, 郑建伟, 王中生, 张世挺, 杨文杰,安树青. 2007.海南岛吊罗山热带山地雨林两个演替阶段的种间联结性. 生物多样性, 15(3): 257-263.
+
+- 吴大荣. 2001.福建罗卜岩闽楠(*Phoebe bournei*) 林中优势树种生态位研究. 生态学报, 21(5):851-855
+
+- 向悟生, 李先琨, 苏宗明, 欧祖兰, 宁世江, 唐润琴, 李瑞棠. 2002.元宝山冷杉群落主要树木种群生态位的初步研究. 武汉植物学研究, 20(2):105-112.
+
+- 邢福, 郭继勋. 2001.糙隐子草草原 3 个放牧演替阶段的种间联结对比分析. 植物生态学报, 25(6):693-698
+
+- 杨利民, 周广胜, 王国宏. 2001.草地群落物种多样性维持机制的研究Ⅱ物种实现生态位. 植物生态学报, 25(5):634-638.
+
+- 张光明, 杨大荣, 徐磊, 彭艳琼, 卢耀. 2003.西双版纳聚果榕榕果小蜂种间联结性研究. 生态学杂志, 22(4):20-26.
+
+- 张桂莲, 张金屯. 2002.关帝山神尾沟优势种生态位分析. 武汉植物学研究, 20(3): 203-208.
+
+- 张金屯. 2004.数量生态学.北京:科学出版社.
+
+- 张倩媚, 陈北光, 周国逸. 2006.鼎湖山主要林型优势树种种间联结性的计算方法研究. 华南农业大学学报, 27(1):79-83.
+
+- 张思玉, 郑世群. 2002.福建永定桫椤群落内主要灌木种群的种间联结性研究. 云南植物研究, 24(1):17-22.
+
+- 张志勇, 陶德定, 李德铢. 2003.五针白皮松在群落演替过程中的种间联结性分析. 生物多样性, 11(2):125-131.
+
+- 周先叶, 王伯荪, 李鸣光, 昝启杰. 2000.广东黑石顶自然保护区森林次生演替过程中群落的种间联结性分析. 植物生态学报, 24(3):332-339.
+
+- 朱圣潮. 2006.中华水韭松阳居群的群落结构与种间联结性研究. 生物多样性, 14(3):258-264.
