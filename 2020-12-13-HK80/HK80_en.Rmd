@@ -1,0 +1,146 @@
+---
+title: "The conversion between the WGS84 and the HK80 systems using HK80 and other tools"
+author: "Jinlong Zhang"
+date: "12/13/2020"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{The conversion between the WGS84 and the HK80 systems using HK80 and other tools}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+HK80 (Hong Kong 1980, EPSG: 2326) is one of the most widely used geographical coordinate systems in Hong Kong. Compared to latitude and longitude in the WGS84 (EPSG: 4326) system,  HK80 uses X and Y for denoting easting and northing from the origin. This tutorial describes how to convert HK80 coordinates to WGS84 coordinate system using the HK80 package.
+
+The HK80 R package was develped based on the equations provided by the Survey & Mapping Office, Lands Department, Hong Kong SAR Governemt, which is available at (https://www.geodetic.gov.hk/common/data/pdf/explanatorynotes_c.pdf).
+
+Over the past few years, a number of new tools have appreared. For example, the HK80 online  conversion tool of the Survey and Mapping Office, Lands Department (https://www.geodetic.gov.hk/en/services/tform/tform.aspx) provides an API that can process user's query. The `sf` R package provides the function `st_transform` based on the `proj` package, making the conversion between different coordinate systems very convenient. There is also a Python package called `hk80` (https://pypi.org/project/hk80/) for converting the coordinates, basing upon the more widely used package `pyproj` (https://pyproj4.github.io/pyproj/stable/#, https://proj.org/).
+
+The online conversion tool supplied by the Hong Kong Lands Department is the first choice among different conversion tools. However, because the server may have restrictions when querying a large amount of data, the conversion tool may not be very convinient (although I have not tried to get my IP blocked).
+
+`sf` and `HK80`, on the other hand, do not have these restrictions. Both the results from `sf` and `HK80` are reliable, but `sf` is easier to use. The results of the HK80 package can be used as a reference.
+
+The conversion between DMS to decimal format and vice versa are also provided as an appendix.
+
+# HK80GRID to WGS84
+
+## HK80 R package
+```{R}
+library(HK80)
+HK1980GRID_TO_WGS84GEO(N = 820359.389, E = 832591.320)
+```
+
+## The official online conversion tool
+the Geodetic Survey Section, Lands Department, Hong Kong SAR Gov.
+
+API example: `http://www.geodetic.gov.hk/transform/v2/?inSys=hkgrid&e=832591.320&n=820359.389`
+
+```{R}
+library(jsonlite)
+data1 <- fromJSON("http://www.geodetic.gov.hk/transform/v2/?inSys=hkgrid&e=832591.320&n=820359.389")
+names(data1)
+
+data1$wgsLat
+
+data1$wgsLong
+```
+
+## the sf package
+```{R}
+library(sf)
+p1 = st_point(c(832591.320, 820359.389))
+sfc = st_sfc(p1, crs = 2326)
+(st_transform(sfc, 4326))
+```
+
+# WGS84 to HK80GRID
+
+## the HK80 R package
+```{R}
+library(HK80)
+WGS84GEO_TO_HK1980GRID(latitude = 22.32224, longitude = 114.14118)
+```
+
+## The official online conversion tool
+from the Geodetic Survey Section, Lands Department, Hong Kong SAR Gov.
+
+```{R}
+# Copy the following URL to browser
+# http://www.geodetic.gov.hk/transform/v2/?inSys=wgsgeog&outSys=hkgrid&lat=22.32224&long=114.14118&h=23.128
+# {"hkN": 820358.910,"hkE": 832590.508,"hkpd": 26.009}
+
+library(jsonlite)
+data1 <- fromJSON("http://www.geodetic.gov.hk/transform/v2/?inSys=wgsgeog&outSys=hkgrid&lat=22.32224&long=114.14118&h=23.128")
+
+names(data1)
+
+data1$hkN
+data1$hkE
+```
+
+## the sf package
+
+```{R}
+library(sf)
+p1 = st_point(c(114.14118, 22.32224))
+sfc = st_sfc(p1, crs = 4326)
+(ccc <- st_transform(sfc, 2326))
+```
+
+# Appendix: DMS to demical and vice versa
+
+## Using the sp package
+
+```{R}
+library(sp)
+dd2dms(114.14118) # decimal to Degree, Minute, Second format
+as.numeric(dd2dms(114.14118)) #
+
+char2dms("47d15'6.12\"E")
+as.numeric(char2dms("47d15'6.12\"E"))
+```
+
+## Using the biogeo package
+```{R}
+library(biogeo)
+res <- dms2dd(47,15,6.12,"E") # ns letters (N,S,E,W)
+print(res)
+
+dd2dmslong(114.14118)
+dd2dmslat(22.32224)
+```
+
+# SessionInfo
+```{R}
+sessionInfo()
+```
+
+
+# Further Reading
+
+- Jeroen Ooms (2014). The jsonlite Package: A Practical and
+  Consistent Mapping Between JSON Data and R Objects.
+  arXiv:1403.2805 URL
+  https://arxiv.org/abs/1403.2805.
+
+- Jinlong Zhang (2016). HK80: Conversion Tools for HK80
+  Geographical Coordinate System. R package version 0.0.2.
+  https://CRAN.R-project.org/package=HK80
+
+- Mark Robertson (2016). biogeo: Point Data Quality
+  Assessment and Coordinate Conversion. R package version
+  1.0. https://CRAN.R-project.org/package=biogeo
+
+- Pebesma, E., 2018. Simple Features for R: Standardized
+  Support for Spatial Vector Data. The R Journal 10 (1),
+  439-446, https://doi.org/10.32614/RJ-2018-009
+
+- Roger S. Bivand, Edzer Pebesma, Virgilio Gomez-Rubio,
+  1.    Applied spatial data analysis with R, Second
+  edition. Springer, NY. https://asdar-book.org/
+
+- https://pypi.org/project/hk80/
+
+- https://spatialreference.org/ref/?search=Hong+Kong
+
+- https://www.geodetic.gov.hk/en/download.htm
+

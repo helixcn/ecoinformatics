@@ -1,0 +1,141 @@
+---
+title: "用pkgdown为R程序包建立网站"
+author: "Jinlong Zhang"
+date: "3/25/2021"
+output: html_document
+---
+
+-   为R程序包建立project
+-   管理Rstudio中的git选项卡
+-   用pkgdown编译网站
+-   将docs文件夹上传到github
+-   设定github展示网页
+-   修改与重新发布
+
+# 1 目的
+
+本文以HK80程序包为例 (<http://helixcn.github.io/HK80/>)，介绍怎样将R 包的帮助文件（Rd文件）和vignettes中的Rmd文件等编译为网站并发布到github pages，以方便浏览。
+
+# 2 所需软件
+
+1.  R (<https://www.r-project.org/>)
+2.  Rstudio (<https://rstudio.com/products/rstudio/download/>)
+3.  git (<https://git-scm.com/>)
+4.  github仓库，以([https://github.com/helixcn/HK80)为例](https://github.com/helixcn/HK80)为例){.uri}
+5.  保存在本地的R包源代码，本文以HK80为例，可在 (<https://github.com/helixcn/hk80>) 下载
+6.  pkgdown、knitr、rmarkdown、sf、jsonlite、sp、biogeo等程序包
+
+操作的主要在Rstudio中完成。
+
+# 3 为R程序包建立project
+
+在Rstudio中管理R包，一般要建立一个Rproject，以便于管理，因此先介绍如何创建R包的Rproject。
+
+方法为：File\>New Project\>Existing Directory，找到程序包的源代码所在文件夹，打开即可。
+
+建立R项目将对程序包内的R代码进行格式化（如调整换行和缩进），同时会创建.Rproj、.gitignore等文件。
+
+![](2021-03-24%2016_51_56-HK80%20-%20master%20-%20RStudio.jpg)
+
+图1. 建立新项目
+
+![](2021-03-24%2016_52_05-HK80%20-%20master%20-%20RStudio.jpg)
+
+图2. 基于已有文件夹建立新项目
+
+.gitignore是一个纯文本文件，保存的是不想同步到github的文件列表。不同项目的.gitignore一般来说也是不同的。Rstudio创建的.gitignore文件对于一般的R包项目已经足够。
+
+# 4 管理Rstudio中的git选项卡
+
+![](2021-03-24%2016_26_38-HK80%20-%20master%20-%20RStudio.jpg)
+
+图3. git选项卡与等待提交（commit）的文件
+
+创建好Rproject之后，可以看到在Rstudio的addin中，也增加了若干选项卡：
+
+![](2021-03-24%2016_03_21-HK80%20-%20master%20-%20RStudio.jpg)
+
+图4. Rstudio的Addin选项
+
+![](2021-03-24%2016_04_14-HK80%20-%20master%20-%20RStudio.jpg)
+
+图5. 安装、检查和编译R程序包选项
+
+-   在Build选项卡中，可找到安装程序包、编译程序包源代码的按钮。
+-   在git选项卡中，可找到任何内容有更改的文件名，并有diff、commit、pull、push等按钮。代码做了修改以后有哪些变化，点击diff即可查看。若有文件做了改动，需要提交修改，则可以点击commit，同时提供相应的备注（message）。
+-   commit提交以后，本地的修改已经放入git缓存中，但是仍然未与github上的仓库同步，点击push即可提交到github网站。
+
+不过，有时github上的网站可能通过网页版本编辑过，与本地版本不一致，此时，应该先点击pull，将本地文件夹中的源文件与github同步，再从最新版本开始修改，以免发生版本冲突。
+
+# 5 用pkgdown生成网站
+
+1.  在R中输入 `usethis::use_pkgdown()`，程序包的根目录将自动创建_pkgdown.yml，而且其他如.gitignore等会也被自动修改。
+
+![](2021-03-24%2016_13_30-HK80%20-%20master%20-%20RStudio.jpg)
+
+图6. 项目中整合pkgdown
+
+Rstudio会自动打开pkgdown.yml等待用户编辑，不过一般情况下并不需要编辑。
+
+要将文档编译为pkgdown网站，用如下命令：
+
+    pkgdown::build_site()
+
+该命令将编译README.md文件，man文件夹下的rd文件以及vigenettes下的Rmd文件，并将read.md文件作为程序包网站的首页，编译好的各文件自动包含了knitr运行的结果（如各函数帮助文件的图表等）。编译完成，则程序包根目录下会生成docs文件夹，里面保存了用pkgdown生成的网站。
+
+![](2021-03-24%2016_21_33-HK80%20-%20master%20-%20RStudio.jpg)
+
+图7. pkg程序包正在编译文档，生成网站
+
+# 6 将docs文件夹上传到github
+
+虽然网站已经生成，但git不会自动将docs文件夹上传到github，这是因为该文件夹在.gitignore中默认是被忽略的。要将网站上传到github，需要先更改.gitignore。
+
+修改的方法是：打开.gitignore文件，在doc前面加上一个英文井号，将这一行注释掉。
+
+![](2021-03-24%2016_25_34-HK80%20-%20master%20-%20RStudio.jpg)
+
+图8. 编辑.gitignore文件
+
+回到Rstudio的git窗口，doc文件夹现在变成可见了。
+
+![](2021-03-24%2016_32_17-HK80%20-%20master%20-%20RStudio.jpg)
+
+图9. 待commit到git缓存中的文件
+
+勾选docs文件夹，点击commit，写好相应的备注信息message，docs文件夹下所有的内容就放入了git的本地缓存中。
+
+![](2021-03-24%2016_32_47-HK80%20-%20master%20-%20RStudio.jpg)
+
+图10. 提交时为了更好记录更改历史，要提供message
+
+按右上角的push按钮（向上的绿色箭头），即可将修改上传到github网站。
+
+# 7 让docs下的网站可以从github访问
+
+怎样才能让网址 (<https://helixcn.github.io/HK80>) 显示 docs文件夹中的内容呢？
+
+方法如下：
+
+打开 <https://github.com/helixcn/hk80> 网页，修改settings中的GitHub Pages选项。
+
+路径为：Settings\>GitHub Pages\>Source\>Master\>/docs 点击 save（保存）。
+
+保存后，网站 <https://helixcn.github.io/HK80> 即可浏览。
+
+![](2021-03-24%2016_33_47-helixcn_HK80_%20Conversion%20Tools%20for%20HK80%20Geographical%20Coordinate%20System.jpg)
+
+图11. HK80的源代码网页，注意右上角的Settings
+
+![](2021-03-24%2016_34_41-Options.jpg)
+
+图12. GitHub pages的设定
+
+# 8 修改与重新发布
+
+若R的文档文件进行过任何修改，则需要重新运行`pkgdown::build_site()`以更新docs文件夹中的内容。每一次对程序包的代码修改以后，都需要在git面板提交(commit)，然后用push同步到github的仓库中。当然，输入git命令行的用户可以直接通过命令行提交。
+
+# 进一步阅读
+
+-   R package down模板 <https://pkgdown.r-lib.org/>
+-   为新手准备的现代化 R 包开发流程 <https://cosx.org/2021/02/writing-r-packages-a-modern-workflow-for-beginners/>
