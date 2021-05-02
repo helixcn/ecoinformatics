@@ -1,0 +1,476 @@
+---
+title: "用R分析物种和系统发育多样性"
+author:
+  - 加拿大 Steve Kembel 原著
+  - 张金龙 编译
+email: steve.kembel@gmail.com
+  
+documentclass: ctexart
+output:
+  rticles::ctex:
+    fig_caption: yes
+    number_sections: yes
+    toc: yes
+classoption: "hyperref,"
+---
+# 背景
+本课程中， 我们将学习如何分析阿尔伯塔草原的一组植物群落数据。数据中包括阿尔伯塔几个地点草原植物盖度、功能性状和系统发育关系等，
+
+数据详细介绍参见以下论文: S.W. Kembel and J.F. Cahill, Jr. 2011. Independent evolution of leaf and root traits within and among temperate grassland plant communities. PLoS ONE 6(6): e19992. (doi:10.1371/journal.pone.0019992).
+
+# 怎样使用课程材料
+本课程覆盖了导入数据，在R中分析生物多样性的全部内容。如果要学习全部课程， 可以从R入门部分开始。如果已经有R的基础， 则可以直接学习本讲义。本课程需要用到picante程序包，以及数据映像（即.Rdata），后者包括练习用的全部数据，有了这些数据，运行后面的命令就可直接得到结果。
+
+# 生物多样性数据导入R
+首先， 查看一下我们需要的程序包是否能加载。需要用的程序包有ape, picante, vegan. 由于picante是依赖另外两个程序包的，所以加载picante的时候，另外两个程序包也会自动加载。
+
+设定工作路径，请注意Windows和MacOS以及Linux操作系统上，路径斜杠的方向
+
+```{R}
+#setwd("/Users/jinlong/Dropbox/04\ to\ review/kembel/")
+setwd("C:\\Users\\jlzhang\\Dropbox\\04 to review\\kembel")
+library(picante)
+```
+
+## 群落数据
+群落数据包括每个地点，或者每块样地物种的个体数，或者相对多度等。在本课程的数据中，多度数据是每个不同生境20m*20m样方中植物的相对盖度。
+
+群落数据的格式为data.frame, 行表示样地，列表示物种。 练习数据已经包括comm数据了， 所以直接用就行了。 如果数据是保存在csv文件中， 则需要用read.csv函数读取，格式如下：
+```{R}
+# 每一行代表一块样地，因此行名就是样地编号，
+# 第一行作为各列名称，所以这里设定header = TRUE。
+
+comm <- read.csv("grassland.community.csv", header = TRUE, row.names = 1)
+```
+用以上方法将数据读取到R中，注意行名和列名并不是数据本身，而是各行列的名称。行列有了名称， 在后续就更容易操作和展示。群落数据的各行列有了名称，才方便和其他类型的数据关联。
+```{R}
+# 先查看comm的数据类型
+class(comm)
+
+# 查看该data.frame是由多少行列组成的。(rows x columns)
+dim(comm)
+
+# 查看行名
+rownames(comm)
+
+# 查看前六列的名
+head(colnames(comm))
+
+# 提取数据的子集，1到5行，1到5列数据
+comm[1:5, 1:5]
+```
+本数据中， 多度其实是样地中某种植物的盖度。多元统计中的很多方法对于多度很敏感，因此可以将绝对多度转换为相对多度。用vegan中的函数即可完成。 
+```{R}
+# 查看每个样方中盖度之合， 如果数据为个体数， 
+# 则表示每个样方中所有种的总个体数
+apply(comm, 1, sum)
+
+# 除以每个样方的盖度和， 将盖度转换为相对盖度
+comm <- decostand(comm, method = "total")
+
+# 每个样方的总盖度
+apply(comm, 1, sum)
+
+# 查看转换后的数据
+comm[1:5, 1:5]
+```
+## 性状数据
+trait包括每个种叶和根的数据。读取到R中的方法与群落数据一样，但是在性状数据中，每个种是一行，每个性状是一列。
+```{R}
+traits <- read.csv("species.traits.csv", header = TRUE, row.names = 1)
+
+# 查看性状数据的前6列
+head(traits)
+
+# 绘制两两相关图
+pairs(traits)
+
+# 由于一些变量显著偏向一侧，因此进行对数转换
+traits <- log10(traits)
+
+# 查看转换后的数据
+pairs(traits) 
+```
+## 样地的总体情况Metadata
+主要包括样地的生境，采集地点，环境数据，如坡度、干湿度等
+
+```{R}
+metadata <- read.csv("plot.metadata.csv", header = TRUE, row.names = 1)
+
+# 查看前6行
+head(metadata)
+```
+## 进化树（或称为系统树）
+newick格式的进化树，用read.tree读取. Nexus格式的进化树，用read.nexus读取。
+
+```{R}
+phy <- read.tree("grassland.phylogeny.newick")
+class(phy)
+phy
+```
+读取到R中的进化树为phylo为格式。 phylo格式的详细说明参见ape的主页(http://ape.mpl.ird.fr/)。 phylo对象的本质是list，包括进化树末端分类单元名称（tip label），枝长（edge length）等等， ape内置的相关函数可以针对phylo这种数据格式打印， 汇总， 绘图等。
+
+```{R}
+# 列出phy对象的所有名称， 这些名称是list内部对象的名
+names(phy)
+
+# 查看末端分类单元名称， 取前5个
+phy$tip.label[1:5]
+
+# 进化树有多少末端分类单元？
+Ntip(phy)
+
+# 绘制进化树，用cex参数调整物种名字体大小
+plot(phy, cex = 0.5)
+```
+## 数据整理（cleaning）及匹配
+
+本分析用到的数据包括群落、性状、进化树以及metadata。
+```{R}
+ls()
+```
+
+示例中的数据，因为已经经过了认真整理，样地和样品中的物种名能够完全对应。但是很多情况下，物种名并不能完全匹配。例如， 样地数据可能只有一部分种出现在进化树中，有些种可能有性状数据，但未出现在进化树中。一些分析中， R假设物种在群落数据和进化树中出现的顺序是一致的。但是有可能出现输入错误等。 以上问题都要找出来。picante程序包中有几个函数来检测不同数据中物种名是否相同。
+```{R}
+# 检查物种是否匹配
+combined <- match.phylo.comm(phy, comm)
+# 返回结果是一个包含 phy和com的list，
+# 未在两个数据集中都出现的物种都已经去除，
+# 并且顺序都排好了。
+# 这里用combined中的数据，替换原始数据。
+
+phy <- combined$phy
+comm <- combined$comm
+# 性状数据也需要进行同样的处理
+combined <- match.phylo.data(phy, traits)
+
+# 用结果中检查过的数据，替换掉原来的数据。
+# 由于之前的返回结果是list， 这里用$调取phy和data
+phy <- combined$phy
+traits <- combined$data
+
+#再检查一下metadata与群落数据出现的顺序是否一致？
+all.equal(rownames(comm), rownames(metadata))
+
+# 若顺序不同， metadata数据中样方出现的顺序就应该按照群落顺序排序
+metadata <- metadata[rownames(comm), ]
+
+# 这样，数据预处理就完成了。 后面即可开始各种生物多样性分析。
+```
+# 生物多样性数据的可视化及汇总
+## 物种丰富度和多样性
+每种生境上的物种数是否相同？
+```{R}
+# 比较 fescue 和 mixedgrass 生境中物种数的差异
+boxplot(specnumber(comm) ~ metadata$habitat, ylab = "# of species")
+
+# 用t检验比较不同生境中物种数是否存在差异
+t.test(specnumber(comm) ~ metadata$habitat)
+
+# 物种累计曲线，用于查看样方总面积是否足够大
+plot(specaccum(comm), xlab = "# of samples", ylab = "# of species")
+```
+# 群落多元分析
+
+不同样地植物群落物种组成是怎样变化的？生境类型和环境变量与群落植物组成有什么关系？
+
+要研究这些问题， 需要用到多元排序方法。 相关函数在vegan程序包中，相关的函数的帮助文件和使用指南也非常详尽。 也可以参考 Borcard等人编写的 Numerical Ecology in R， 这本书在2018年出的第二版。
+
+## 等级聚类
+
+通过聚类，物种组成相近的群落能聚合到一起。 先计算样方之间的Bray-Curtis距离，Bray-Curtis不但考虑了物种组成的差异， 同时考虑了每个种的多度。之后，用聚合等级聚类（agglomerative hierachical clustering algorithm）算法即可实现聚类。 
+
+```{R}
+# 计算样地之间的 Bray-Curtis距离 
+comm.bc.dist <- vegdist(comm, method = "bray")
+
+# 用UPGMA方法聚类
+comm.bc.clust <- hclust(comm.bc.dist, method = "average")
+
+# 绘制聚类图
+plot(comm.bc.clust, ylab = "Bray-Curtis dissimilarity")
+```
+两种类型的草地， 由于有不同的物种组成，分别聚成两类
+
+## 排序
+R中的排序方法比较多，这里我们采用NMDS （non-metric multidimensional scaling）方法。 NMDS的方法是基于距离矩阵的。
+
+```{R}
+# metaMDS函数会自动进行数据转换，并检查结果是否已经收敛。
+comm.bc.mds <- metaMDS(comm, dist = "bray")
+
+# 绘制stressplot，检查排序结果
+stressplot(comm.bc.mds)
+```
+排序结果可通过多种方式展示
+```{R}
+# 在Biplot中显示样地
+ordiplot(comm.bc.mds, display = "sites", type = "text")
+
+# 添加物种名
+ordipointlabel(comm.bc.mds)
+
+# ordiplot可以只打开绘图设备和画布，不绘制任何内容
+mds.fig <- ordiplot(comm.bc.mds, type = "none")
+
+# 只添加样地，颜色为样地类型，pch这里设定的是点的形状。
+# 试试 plot(1:30, pch = 1:30)
+points(mds.fig, "sites", pch = 19, col = "green", 
+       select = metadata$habitat == "Fescue")
+points(mds.fig, "sites", pch = 19, col = "blue", 
+       select = metadata$habitat == "Mixedgrass")
+
+# 添加生境置信椭圆
+ordiellipse(comm.bc.mds, metadata$habitat, 
+            conf = 0.95, label = TRUE)
+
+# 将聚类结果在NMDS排序图中显示
+ordicluster(comm.bc.mds, comm.bc.clust, col = "gray")
+```
+
+也可以用ordisurf函数显示物种多度
+```{R}
+# 显示球葵属Sphaeralcea 的多度. cex参数可以调整点的大小
+ordisurf(comm.bc.mds, comm[, "Sphaeralcea_coccinea"], 
+         bubble = TRUE, main = "Sphaeralcea coccinea abundance",
+         cex = 3)
+```
+
+## 添加环境信息和性状数据到排序中
+环境变量与排序轴之间是怎样的关系？这里使用envfit函数拟合
+```{R}
+ordiplot(comm.bc.mds)
+plot(envfit(comm.bc.mds, metadata[, 3:6]))
+```
+
+用vegan中的cca或者rda等排序方法也是可以的。cca或者rda直接考虑了物种组成和多度， 并不用先计算样方之间的距离。
+
+# 性状与进化树
+## 系统发育信号
+
+最近，系统发育保守性受到很多人关注。群落系统发育结构分析就假设物种的性状是系统发育保守的。
+
+系统发育信号是度量不同物种的性状在进化树上相似程度的指数。Blomberg K统计量就是比较性状的观察值与布朗运动模型预测值的统计量 （Blomberg et al. 2003）。K 值接近1表明性状进化过程接近布朗运动， 表明有一定程度的系统发育信号或者呈现一定的保守性。K接近于0表明性状进化倾向于随机，K>1 表明性状保守。
+
+K的显著性检验可以用以下方法：  将进化树上的物种名随机打乱，计算每次打乱物种名后，性状的系统发育独立差（Phylogenetic independent contrast）的方差, 在多次打乱物种名生成零分布后，真实进化树的系统发育独立差方差与之进行比较。相关检验在Kcalc，phylosignal和multiPhylosignal 函数中可实现。
+
+下面用练习数据计算系统发育信号
+```{R}
+# 可以用Kcalc依次计算traits数据框的所有列
+apply(traits, 2, Kcalc, phy)
+
+# multiPhylosignal函数可以检验多列的P值，
+# 但该函数需要的进化树为严格的二分叉树
+multiPhylosignal(traits, multi2di(phy))
+```
+
+结果中包括K和PIC.variance.P, 后者表示性状的非随机程度。大部分变量都完全随机表现出更强的系统发育信号。
+
+## 性状进化的可视化
+
+```{R}
+plot(phy, direction = "up", show.tip.label = FALSE, 
+     show.node.label = TRUE, cex = 0.7)
+tiplabels(pch = 19, col = "black", 
+          cex = 3 * (traits[, "LeafArea"]/max(traits[,"LeafArea"])))
+```
+## 性状相关性的系统发育分析
+若功能性状表现出较强的系统发育信号，就违背了数据完全独立的假设。此时可以在gls中设定corBrownian 关联矩阵，考虑物种之间的系统发育关系。（注：在分析过程中， 可以使用caper的pgls回归。）
+
+其中gls是一般最小二乘(Generalised least squares)法的简称，方法类似ANOVA 或线性模型。无序类别变量以及连续变量都可以通过这种方式检验。
+
+下面检验检测一下， 考虑物种之间系统发育关系时， specific root length (SRL) 和 root tissue density 之间的关系。
+
+```{R}
+# 普通的gls模型， 不考虑系统发育关系
+root.gls <- gls(RootTissueDens ~ SRL, data = traits)
+anova(root.gls)
+
+# 考虑系统发育关系
+root.pgls <- gls(RootTissueDens ~ SRL, 
+                 correlation = corBrownian(value = 1, phy),
+                 data = traits)
+anova(root.pgls)
+# 绘图
+plot(RootTissueDens ~ SRL, data = traits, 
+     xlab = "SRL (specific root length)",
+     ylab = "Root tissue density")
+abline(coef(root.gls), lwd = 2, col = "black")
+abline(coef(root.pgls), lwd = 2, col = "red")
+legend("bottomleft", 
+       legend = c("GLS fit", "Phylogenetic GLS fit"), 
+       lwd = 2, col = c("black", "red"))
+```
+当不考虑系统发育关系时，SRL和root tissue density的关系很弱。考虑系统发育信号后，两者的相关性就明显了。
+
+# 系统发育与性状多样性
+## 系统发育多样性
+```{R}
+# 计算Faith's PD
+comm.pd <- pd(comm, phy)
+head(comm.pd)
+
+# 不同生境的Faith's PD
+boxplot(comm.pd$PD ~ metadata$habitat, 
+        xlab = "Habitat", ylab = "Faith's PD")
+
+# 不同生境PD是否相同
+t.test(comm.pd$PD ~ metadata$habitat)
+
+# 查看PD和物种丰富度的关系
+plot(comm.pd$PD ~ comm.pd$SR, 
+     xlab = "Species richness", ylab = "Faith's PD")
+```
+
+picante可以用来计算
+\(MPD\), \(MNTD\), \(SES_{MPD}\) and \(SES_{MNTD}\)
+具体定义， 请参见Phylocom的说明书。
+
+群落系统发育最重要指数之一就是标准效应值。公式如下
+\(SES_{metric} = \frac{ Metric_{observed} - mean(Metric_{null}) }{sd(Metric_{null})}\)
+
+一般包括： 
+\(SES_{MPD}\) 等于 -NRI， \(SES_{MNTD}\) 等于 -NTI
+
+picante中提供了不同的零模型，用来进行随机化，以计算SES。
+
+```{R}
+# 系统发育距离矩阵
+phy.dist <- cophenetic(phy)
+
+# ses.mpd
+comm.sesmpd <- ses.mpd(comm, phy.dist, null.model = "richness", 
+                       abundance.weighted = FALSE, 
+                       runs = 999)
+head(comm.sesmpd)
+
+# ses.mntd
+comm.sesmntd <- ses.mntd(comm, phy.dist, null.model = "richness",
+                         abundance.weighted = FALSE,
+                         runs = 999)
+head(comm.sesmntd)
+```
+输出结果
+`ntaxa` - 物种丰富度
+`mpd.obs` -  群落中mpd观察值
+`mpd.rand.mean` - 零群落mpd平均值
+`mpd.rand.sd` - 零模型mpd的标准差
+`mpd.obs.rank` - 观察值在零模型中的顺序rank（秩）
+`mpd.obs.z` -  mpd标准效应指数 (等于 -NRI)
+`mpd.obs.p - P-value (quantile) of observed mpd vs. null communities (= mpd.obs.rank / runs + 1)`
+`runs` - 随机化次数
+
+SES.mpd>0，且mpd.obs.p>0.95时，表示群落系统发育均匀。  SES.mpd<0，且mpd.obs.p<0.05时，表明与零模型相比系统发育聚集。
+
+一般认为， MPD对对系统发育整体的聚集性或均匀性较为敏感，MNTD对靠近进化树末端的均匀性和聚集性更为敏感。
+
+```{R}
+# 不同生境的ses.mpd
+plot(comm.sesmpd$mpd.obs.z ~ metadata$habitat, 
+     xlab = "Habitat", ylab = "SES(MPD)")
+abline(h = 0, col = "gray")
+t.test(comm.sesmpd$mpd.obs.z ~ metadata$habitat)
+
+# 不同生境的ses.mntd
+plot(comm.sesmntd$mntd.obs.z ~ metadata$habitat, 
+     xlab = "Habitat", ylab = "SES(MNTD)")
+abline(h = 0, col = "gray")
+t.test(comm.sesmntd$mntd.obs.z ~ metadata$habitat)
+```
+
+```{R}
+# 某fescue群落中的物种
+plot(phy, show.tip.label = FALSE, 
+     main = "Fescue community fes-K-11")
+tiplabels(tip = which(phy$tip.label %in% 
+                        colnames(comm)[comm["fes-K-11", ] > 0]), 
+          pch = 19)
+```
+ 'mix-H-23' Mixedgrass 群落中包含了一系列系统发育聚集的种。
+```{R}
+# 某mixedgrass群落中出现的个体
+plot(phy, show.tip.label = FALSE, 
+     main = "Fescue community mix-H-23")
+tiplabels(tip = which(phy$tip.label %in% 
+                        colnames(comm)[comm["mix-H-23", ] >
+                                         0]), pch = 19)
+```
+## 性状多样性
+性状的分析方法与进化树分析的方法类似，一般都是先进行标准化，再计算欧式距离，再计算功能性状相似性，计算MPD或者MNTD
+
+```{R}
+# 性状先用scale标准化， 再用dist计算欧式距离计算
+trait.dist <- as.matrix(dist(scale(traits), method = "euclidean"))
+comm.sesmpd.traits <- ses.mpd(comm, trait.dist, null.model = "richness", 
+                              abundance.weighted = FALSE, runs = 999)
+plot(comm.sesmpd.traits$mpd.obs.z ~ metadata$habitat, 
+     xlab = "Habitat", ylab = "Trait SES(MPD)")
+abline(h = 0, col = "gray")
+```
+vegan中的treedive函数与picante中的pd类似。
+
+## 系统发育beta多样性
+unifrac函数和phylosor函数，都是计算样方之间的Faith's PD。 comdist和comdistnt的计算类似于MPD和MNTD，但是是针对样方之间的距离。计算过程中可以考虑多度，由于之前我们计算的Bray-Curtis距离已经考虑了多度。为了方便比较，后续的计算也考虑多度， 即abundance.weighted = TRUE
+
+```{R}
+# 系统发育beta多样性
+comm.mntd.dist <- comdistnt(comm, phy.dist, 
+                            abundance.weighted = TRUE)
+# 功能性状beta多样性
+comm.mntd.traits.dist <- comdistnt(comm, trait.dist, 
+                                   abundance.weighted = TRUE)
+
+# 计算两个距离矩阵的相关性，用mantel检验
+# 此处计算Bray-Curtis距离和mntd距离的相关性
+mantel(comm.bc.dist, comm.mntd.dist)
+
+# 此处计算Bray-Curtis距离和功能性状距离的相关性
+mantel(comm.bc.dist, comm.mntd.traits.dist)
+```
+## 系统发育和功能性状排序
+
+之前，我们用Bray-Curtis进行了NDMS排序，实际上，系统发育MNTD以及功能性状MNTD都可以用类似的方法排序， 以展示样地之间的关系
+
+```{R}
+# 由于只有样地之间的距离，这里用monoMDS. 
+# 具体请认真阅读 monoMDS的说明书。
+
+# 系统发育距离
+comm.mntd.mds <- monoMDS(comm.mntd.dist)
+mds.fig <- ordiplot(comm.mntd.mds, type = "none")
+points(mds.fig, "sites", pch = 19, col = "green", 
+       select = metadata$habitat == "Fescue")
+points(mds.fig, "sites", pch = 19, col = "blue", 
+       select = metadata$habitat == "Mixedgrass")
+ordiellipse(comm.mntd.mds, metadata$habitat, 
+            conf = 0.95, label = TRUE)
+
+# 功能性状
+comm.mntd.traits.mds <- monoMDS(comm.mntd.traits.dist)
+mds.fig <- ordiplot(comm.mntd.traits.mds, type = "none")
+points(mds.fig, "sites", pch = 19, col = "green", 
+       select = metadata$habitat == "Fescue")
+points(mds.fig, "sites", pch = 19, col = "blue", 
+       select = metadata$habitat == "Mixedgrass")
+ordiellipse(comm.mntd.traits.mds, metadata$habitat, 
+            conf = 0.95, label = TRUE)
+```
+无论是对物种beta多样性， 系统发育beta多样性还是功能性状beta多样性进行排序方式，两种生境类型的差别都比较大。
+
+##解释beta多样性
+
+为了解释哪些因子对样方之间的系统发育关系有影响， 可以用permutational MANOVA （adonis）计算，R代码如下。输出结果类似ANOVA方差分析。
+
+以下分别检验生境对于Bray-Curtis距离、系统发育距离、功能性状距离的解释能力。
+
+```{R}
+# Bray-Curtis距离
+adonis(comm.bc.dist ~ habitat, data = metadata)
+
+# 系统发育多样性距离
+adonis(comm.mntd.dist ~ habitat, data = metadata)
+
+# 功能性状距离
+adonis(comm.mntd.traits.dist ~ habitat, data = metadata)
+```
+
