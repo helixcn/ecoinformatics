@@ -1,0 +1,229 @@
+---
+title: "怎样使用中国植物物种名录（2022版）校对植物名录"
+author: "Jinlong Zhang"
+date: '2022-06-14'
+output:
+  word_document: default
+  html_document:
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+按： 本文介绍基于《中国植物物种名录》数据库创建的R包LPSC的用法。LPSC可按照内置数据批量查询学名的接受名，也可以按照中文名、科属等查询。可用资料包括目、科、属、种、中文名、分布、参考文献等。
+
+# 中国植物物种名录 2022
+
+《中国植物物种名录》（List of plant species in China, 以下简称LPSC）是 《中国生物物种名录》 （http://www.sp2000.org.cn/CoLChina）的一部分，反映了关于中国植物名称分类修订的最新成果，每年在世界生物多样性日（5月22日）发布。
+
+LPSC目前由中国科学院植物研究所刘冰博士负责，数据的贡献者包括活跃在科研一线的50余位植物分类学家。
+
+2022年最新版的LPSC“共收录117330条名称数据，包含45793个接受名称和71537个异名，分属于483科、4275属、38287种和7506种下等级，还包含各名称所对应的原始发表文献和各接受名所对应的省级分布信息”。上述基础数据对于地方性名录的编纂和校对、标准化、科属种数量的统计以及植被调查、物种保护等各方面都是极为重要的。
+
+# 现有查询方式
+
+LPSC目前主要的查询方式有： 
+
+1. 通过http://www.sp2000.org.cn/CoLChina网站查询，该网站可用中文名和拉丁学名检索。不过每次只支持查询一个名称，如果需要检查的物种较多，需要逐条输入，因此仍然有些不便。
+
+2. 中国科学院植物科学数据中心共享的 MS Access数据库以及Excel文档 (https://www.plantplus.cn/doi/10.12282/plantdata.0061)。用户可以直接下载Access或者Excel文件，再逐条搜索和核对。不过，这两个文件是由关系型数据库导出的，用户要查询某个种的信息，分散在多个表中，因此，最好能掌握SQL、VBscript等编程语言，掌握Access报表等技能，因此使用起来也有一定的门槛。
+
+为了便于进行大量异名的校对以及编纂名录的需要，笔者基于LPSC2022的Excel数据编写了R程序包LPSC，编写了几个用于数据查询的函数，本文简要介绍程序包的用法。
+
+# 安装和使用LPSC
+
+## 安装R和Rstudio
+
+LPSC是个R包，源代码保存在github（https://github.com/helixcn/LPSC ）。 该程序包很好解决了批量查询学名的问题，并可以将数据保存在data.frame中，便于保存为excel、csv等文件，也方便名称和分布信息的进一步处理。
+
+如果要使用该程序包，需要先安装R （https://www.r-project.org/）和 Rstudio （https://www.rstudio.com/）。
+
+## 安装devtools程序包，以便从github安装LPSC
+
+安装方法是，在Rconsole输入
+
+```R
+install.packages("devtools", dependencies = TRUE)
+```
+
+## 安装LPSC
+
+方法是，在Rconsole输入： 
+
+```R
+devtools::install_github("helixcn/LPSC", build_vignettes = TRUE)
+```
+
+## 基本用法
+
+核心函数`get_accepted_name()` 主要用于查询。简单示例如下：
+
+```R
+library(LPSC)
+get_accepted_name("Cyclobalanopsis myrsinifolia")
+aaaa <- get_accepted_name(c(
+  "小叶青冈",
+  "Cyclobalanopsis myrsinifolia",
+  "Machilus chekiangensis",
+  "宫廷胡萝卜"
+))
+```
+
+## 对`get_accepted_name()` 的详细说明
+
+本函数支持用中文名、拉丁学名等查询。中文查询到的， 均为该种的接受名。如果中文名没有匹配上，则表明该中文名在LPSC2022数据库中没有收录。如果拉丁学名没有匹配上，可能是数据库没有收录，也可能是学名拼写错误。如果输入的学名没有拼写错误，查询结果标明该名称是异名，则`get_accepted_name()`会给出提示，例如：
+
+```R
+get_accepted_name("Cyclobalanopsis myrsinifolia")
+Note: the accepted name for Cyclobalanopsis myrsinifolia (Blume) Oerst. is: Quercus myrsinifolia Blume 
+```
+
+此处可知 Cyclobalanopsis myrsinifolia 是异名，而对应的接受名为 Quercus myrsinifolia，根据相应提示即可做出更改。
+
+`get_accepted_name()` 要求输入的是字符串向量，目前在R4.2.0 Windows 10上运行良好，支持中文字符的正常显示和处理等。
+
+若要批量查询几百甚至上千个名称，则可以通过`read.csv`或者`openxlsx::read.xlsx()`等方式读入R中（为data.frame格式），用`$`提取出学名一列之后，再将它们传入`get_accepted_name()`即可。在一般的台式机个人电脑上，100个名称不用1分钟即可处理完毕。
+
+学名中有命名人时，需要先将命名人从名称中去除，方法是：
+
+用`plantlist::parse_taxa()` 将转换为data.frame，里面包括自动识别出的属名、种加词、命名人、种下等级名称（var., subsp, f.等）、种下等级加词、种下等级命名人等。将data.frame中的必要项提取出来，再合并为去掉命名人的学名，即可查询。
+
+示例如下：
+
+假设sample_checklist_to_clean.xlsx 中保存了Latin.name一列为学名，里面有命名人，则相应的代码为：
+
+```R
+library(here)
+library(LPSC)
+library(openxlsx)
+
+testdat <- read.xlsx("sample_checklist_to_clean.xlsx")
+
+# 查询多个学名的接受名
+
+## 要使用get_accepted_name，则先要生成能用于查询的学名（不能有命名人）
+scientific_name_parsed <- plantlist::parse_taxa(testdat$Latin.name) # 因有命名人，所以先parse
+
+names_to_search <- paste(scientific_name_parsed$GENUS_PARSED, 
+      scientific_name_parsed$SPECIES_PARSED, 
+      scientific_name_parsed$INFRASPECIFIC_RANK_PARSED, 
+      scientific_name_parsed$INFRASPECIFIC_EPITHET_PARSED)
+
+## 查询
+res_LPSC_2022_accepted_names <- get_accepted_name(names_to_search)
+
+## 保存结果
+write.xlsx(res_LPSC_2022_accepted_names, "res_LPSC_2022_accepted_names.xlsx")
+```
+
+上述脚本将获得res_LPSC_2022_accepted_names.xlsx文件，其结果第一列表示要查询的学名（不包括命名人），后面则是匹配到的LPSC2022的名称，包括接受名，目、科、属、种，省级分布、文献出处等。
+
+若要保存查询过程中的Notes信息，也就是哪些种是异名，可以在Rstudio中将R脚本运行并编译为html （Compile Report 按钮）。
+
+本例子已经上传到： 
+
+# LPSC包的函数
+
+## get_accepted_name
+
+`get_accepted_name(x, dat = LPSC::LPSC2022)`
+
+用于查询学名、中文种名、中文种下单位的接受名，支持一次查询多个名称。因为用到循环，所以速度较慢。
+
+## get_accepted_name_one
+
+`get_accepted_name_one(x0, y0 = LPSC::LPSC2022)`
+
+用于查询某学名的接受名，每次只允许输入一条记录。
+
+## LPSC2022 数据集
+
+`data("LPSC2022")`
+
+LPSC2022的部分数据，已经转换为二进制，内置在LPSC包中。通过`::`即可调用。数据的整理方法参见程序包源代码 （LPSC/R/source_code.R）
+
+## make_taxa_table
+
+`make_taxa_table(x, file = NULL, substitute.sp.white.space = "_")`
+
+基于`get_accepted_name`匹配所得的data.frame，生成科、属、种列表，此列表可以用于Phylomatic、V.PhyloMaker等软件建立进化树。
+
+## search_canonical_name
+
+`search_canonical_name(x, dat = LPSC::LPSC2022)`
+
+查询学名的信息。注意，这里不一定返回接受名，查询结果可能为异名。是否为接受名，可以比较返回结果的accepted_name_code 和 name_code，如果两者一致，则名称即为接受名，否则为异名。
+
+## search_family
+
+`search_family(x, dat = LPSC::LPSC2022)`
+
+输入拉丁科名，调取某科下面所有条目
+
+## search_family_c
+
+`search_family_c(x, dat = LPSC::LPSC2022)`
+
+输入科的中文名，调取该科下面所有条目
+
+## search_genus
+
+`search_genus(x, dat = LPSC::LPSC2022)`
+
+输入属名，调取该属下面所有条目
+
+## search_genus_c
+
+`search_genus_c(x, dat = LPSC::LPSC2022)`
+
+输入属的中文名，调取该属下面所有条目
+
+## search_infraspecies_c
+
+`search_infraspecies_c(x, dat = LPSC::LPSC2022)`
+
+输入种下单位的中文名，如亚种、变种、变型，调取该种下单位对应的记录
+
+## search_source
+
+`search_source(x, dat = LPSC::LPSC2022)`
+
+匹配输入的文献，提供某一字符串，如`"Hance"`，即可查看Hance发表的所有中国植物的名称
+
+## search_species_c
+
+`search_species_c(x, dat = LPSC::LPSC2022)`
+
+输入中文名，调取该中文名对应的记录
+
+## REPLACE
+
+`REPLACE(x)`
+
+替换学名内部的多个空格为一个空格，并去掉首尾的多个空格，主要用于学名匹配前的处理
+
+## Cap
+
+`Cap(x)`
+
+将字符串首字母大写，主要用于学名匹配前的处理
+
+# 引用
+
+本程序包能顺利编写成功最重要是中国科学院植物科学数据中心(https://www.plantplus.cn) 能慷慨分享数据，也要感谢各位分类学家，特别是刘冰博士的贡献。
+
+引用中国植物物种名录（2022版）的方式为：
+
+- List of plant species in China (2022 Edition), 2022, Plant Data Center of Chinese Academy of Sciences, DOI:10.12282/plantdata.0061
+
+- 中国植物物种名录（2022版）,(中国科学院植物研究所), 2022, 中国科学院植物科学数据中心, DOI:10.12282/plantdata.0061
+
+如果觉得LPSC程序包好用，也欢迎引用： 
+
+- Zhang J (2022). LPSC: Tools for searching List of plant species in China. R package version 0.2.0, https://github.com/helixcn/LPSC.
+
+## 备注
+
+如果你还不了解R和Rstudio的使用，可以关注本人的《R语言简明教程》，网址是 https://bio-one.org.cn/App/VideoClass/play.html?guid=R-in-brief 
