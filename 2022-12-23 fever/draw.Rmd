@@ -1,0 +1,36 @@
+---
+title: "covid19"
+author: "ggplot2绘制折线图-展示体温随时间的变化"
+date: "2022-12-23"
+output: html_document
+---
+
+```{R}
+library(here)
+library(ggplot2)
+library(lubridate)
+library(showtext)
+showtext_auto()
+
+dat <- read.csv("fever.csv", header = TRUE)
+dat
+```
+
+```{R}
+date <-  dmy(dat$DATE)
+time <- hm(dat$TIME)
+dt <- date + time
+dat2 <- cbind(dat, dt)
+figure1 <- ggplot(data = dat2, aes(x = dt, y = TEMP)) + 
+    geom_line(col = "deeppink", linewidth = 1.5) + 
+    ggtitle("某人感染2019冠状病毒病之后体温的变化") + 
+    xlab("日期") + 
+    ylab("耳温 °C") + 
+    scale_x_datetime(breaks = "1 day") + 
+    theme(text = element_text(size = 30)) 
+
+figure1
+
+ggsave("covid19_temp.tiff", height = 3, width = 4, dpi = 600)
+```
+

@@ -370,31 +370,31 @@ pre code {
 </div>
 
 
-<p>按：
-本文介绍基于《中国植物物种名录》数据库创建的R包LPSC的用法。LPSC可按照内置数据批量查询学名的接受名，也可以按照中文名、科属等查询。可用资料包括目、科、属、种、中文名、分布、参考文献等。</p>
+<p>按：本文介绍基于《中国植物物种名录》数据库创建的R包LPSC的用法。LPSC可按内置数据批量查询学名的接受名，也可以按照中文名、科属等查询。可查询到的资料包括目、科、属、种、中文名、省级分布、参考文献等。</p>
 <div id="中国植物物种名录-2022" class="section level1" number="1">
 <h1><span class="header-section-number">1</span> 中国植物物种名录
 2022</h1>
 <p>《中国植物物种名录》（List of plant species in China,
-以下简称LPSC）是 《中国生物物种名录》 （<a href="http://www.sp2000.org.cn/CoLChina）的一部分，反映了关于中国植物名称分类修订的最新成果，每年在世界生物多样性日（5月22日）发布" class="uri">http://www.sp2000.org.cn/CoLChina）的一部分，反映了关于中国植物名称分类修订的最新成果，每年在世界生物多样性日（5月22日）发布</a>。</p>
+以下简称LPSC）是 《中国生物物种名录》 （<a href="http://www.sp2000.org.cn/CoLChina）的一部分，反映了中国植物分类修订的最新成果，每年在世界生物多样性日（5月22日）发布" class="uri">http://www.sp2000.org.cn/CoLChina）的一部分，反映了中国植物分类修订的最新成果，每年在世界生物多样性日（5月22日）发布</a>。</p>
 <p>LPSC目前由中国科学院植物研究所刘冰博士负责，数据的贡献者包括活跃在科研一线的50余位植物分类学家。</p>
-<p>2022年最新版的LPSC“共收录117330条名称数据，包含45793个接受名称和71537个异名，分属于483科、4275属、38287种和7506种下等级，还包含各名称所对应的原始发表文献和各接受名所对应的省级分布信息”。上述基础数据对于地方性名录的编纂和校对、标准化、科属种数量的统计以及植被调查、物种保护等各方面都是极为重要的。</p>
+<p>2022年最新版的LPSC“共收录117330条名称数据，包含45793个接受名称和71537个异名，分属于483科、4275属、38287种和7506种下等级，还包含各名称所对应的原始发表文献和各接受名所对应的省级分布信息”。上述基础数据对于地方性名录的编纂和校对、标准化、分类单元数量的统计以及植被调查、物种保护等各方面都是极为重要的。</p>
 </div>
 <div id="现有查询方式" class="section level1" number="2">
 <h1><span class="header-section-number">2</span> 现有查询方式</h1>
 <p>LPSC目前主要的查询方式有：</p>
 <ol style="list-style-type: decimal">
-<li><p>通过http://www.sp2000.org.cn/CoLChina网站查询，该网站可用中文名和拉丁学名检索。不过每次只支持查询一个名称，如果需要检查的物种较多，需要逐条输入，因此仍然有些不便。</p></li>
-<li><p>中国科学院植物科学数据中心共享的 MS Access数据库以及Excel文档 (<a href="https://www.plantplus.cn/doi/10.12282/plantdata.0061" class="uri">https://www.plantplus.cn/doi/10.12282/plantdata.0061</a>)。用户可以直接下载Access或者Excel文件，再逐条搜索和核对。不过，这两个文件是由关系型数据库导出的，用户要查询某个种的信息，分散在多个表中，因此，最好能掌握SQL、VBscript等编程语言，掌握Access报表等技能，因此使用起来也有一定的门槛。</p></li>
+<li><p>通过http://www.sp2000.org.cn/CoLChina网站查询，该网站可用中文名和拉丁学名检索。不过每次只可查询一个名称，如果要检查的名称较多，逐条输入显得有些不便。</p></li>
+<li><p>中国科学院植物研究所植物科学数据中心共享的 MS
+Access数据库以及Excel文档 (<a href="https://www.plantplus.cn/doi/10.12282/plantdata.0061" class="uri">https://www.plantplus.cn/doi/10.12282/plantdata.0061</a>)。用户可以直接下载Access或者Excel文件，再逐条搜索和核对。不过，这两个文件是由关系型数据库导出的，用户要查询的信息往往分散在多个表中，这种情况下，用户最好能掌握SQL、VBscript等编程语言，掌握Access报表等技能，因此这个数据库使用起来也有一定的门槛。</p></li>
 </ol>
-<p>为了便于进行大量异名的校对以及编纂名录的需要，笔者基于LPSC2022的Excel数据编写了R程序包LPSC，编写了几个用于数据查询的函数，本文简要介绍程序包的用法。</p>
+<p>为了便于大量异名的校对，满足编纂名录的需要，笔者基于LPSC2022的Excel数据编写了R程序包LPSC，本文简要介绍程序包的用法。</p>
 </div>
 <div id="安装和使用lpsc" class="section level1" number="3">
 <h1><span class="header-section-number">3</span> 安装和使用LPSC</h1>
 <div id="安装r和rstudio" class="section level2" number="3.1">
 <h2><span class="header-section-number">3.1</span> 安装R和Rstudio</h2>
-<p>LPSC是个R包，源代码保存在github（<a href="https://github.com/helixcn/LPSC" class="uri">https://github.com/helixcn/LPSC</a> ）。
-该程序包很好解决了批量查询学名的问题，并可以将数据保存在data.frame中，便于保存为excel、csv等文件，也方便名称和分布信息的进一步处理。</p>
+<p>LPSC是个R包，源代码保存在github（<a href="https://github.com/helixcn/LPSC" class="uri">https://github.com/helixcn/LPSC</a>）。
+该程序包很好解决了批量查询学名的问题，并可将数据保存在data.frame中，便于保存为excel、csv等文件，也方便名称和分布信息的进一步处理。</p>
 <p>如果要使用该程序包，需要先安装R （<a href="https://www.r-project.org/）和" class="uri">https://www.r-project.org/）和</a> Rstudio （<a href="https://www.rstudio.com/" class="uri">https://www.rstudio.com/</a>）。</p>
 </div>
 <div id="安装devtools程序包以便从github安装lpsc" class="section level2" number="3.2">
@@ -410,8 +410,7 @@ pre code {
 </div>
 <div id="基本用法" class="section level2" number="3.4">
 <h2><span class="header-section-number">3.4</span> 基本用法</h2>
-<p>核心函数<code>get_accepted_name()</code>
-主要用于查询。简单示例如下：</p>
+<p>核心函数是<code>get_accepted_name()</code>，可用学名和中文名查询。简单示例如下：</p>
 <pre class="r"><code>library(LPSC)
 get_accepted_name(&quot;Cyclobalanopsis myrsinifolia&quot;)
 aaaa &lt;- get_accepted_name(c(
@@ -424,24 +423,23 @@ aaaa &lt;- get_accepted_name(c(
 <div id="对get_accepted_name-的详细说明" class="section level2" number="3.5">
 <h2><span class="header-section-number">3.5</span>
 对<code>get_accepted_name()</code> 的详细说明</h2>
-<p>本函数支持用中文名、拉丁学名等查询。中文查询到的，
-均为该种的接受名。如果中文名没有匹配上，则表明该中文名在LPSC2022数据库中没有收录。如果拉丁学名没有匹配上，可能是数据库没有收录，也可能是学名拼写错误。如果输入的学名没有拼写错误，查询结果标明该名称是异名，则<code>get_accepted_name()</code>会给出提示，例如：</p>
-<pre class="r"><code>get_accepted_name(&quot;Cyclobalanopsis myrsinifolia&quot;)
+<p>本函数支持用中文名、拉丁学名等查询。中文查询到的均为该分类单元的接受名。若中文名没有匹配上，可能是该中文名在LPSC2022数据库中没有收录。如果拉丁学名没有匹配上，可能是数据库没有收录，也可能是学名拼写错误。如果输入的学名没有拼写错误，查询结果标明该名称是异名，则<code>get_accepted_name()</code>会给出提示，例如：</p>
+<pre><code>get_accepted_name(&quot;Cyclobalanopsis myrsinifolia&quot;)
 Note: the accepted name for Cyclobalanopsis myrsinifolia (Blume) Oerst. is: Quercus myrsinifolia Blume </code></pre>
-<p>此处可知 Cyclobalanopsis myrsinifolia 是异名，而对应的接受名为
-Quercus myrsinifolia，根据相应提示即可做出更改。</p>
+<p>此处可知 Cyclobalanopsis myrsinifolia 是异名，对应的接受名为 Quercus
+myrsinifolia，根据相应提示即可做出更改。</p>
 <p><code>get_accepted_name()</code> 要求输入的是字符串向量，目前在R4.2.0
 Windows 10上运行良好，支持中文字符的正常显示和处理等。</p>
-<p>若要批量查询几百甚至上千个名称，则可以通过<code>read.csv</code>或者<code>openxlsx::read.xlsx()</code>等方式读入R中（为data.frame格式），用<code>$</code>提取出学名一列之后，再将它们传入<code>get_accepted_name()</code>即可。在一般的台式机个人电脑上，100个名称不用1分钟即可处理完毕。</p>
-<p>学名中有命名人时，需要先将命名人从名称中去除，方法是：</p>
+<p>若要批量查询几百甚至上千个名称，则可以通过<code>read.csv</code>或者<code>openxlsx::read.xlsx()</code>等方式读入R中（为data.frame格式），用<code>$</code>提取出学名后，再将它们传入<code>get_accepted_name()</code>即可。在一般的台式机个人电脑上，100个名称不用1分钟即可处理完毕。</p>
+<p>学名的命名人需要先将命名人从名称中去除，方法是：</p>
 <p>用<code>plantlist::parse_taxa()</code>
 将转换为data.frame，里面包括自动识别出的属名、种加词、命名人、种下等级名称（var.,
 subsp,
 f.等）、种下等级加词、种下等级命名人等。将data.frame中的必要项提取出来，再合并为去掉命名人的学名，即可查询。</p>
 <p>示例如下：</p>
 <p>假设sample_checklist_to_clean.xlsx
-中保存了Latin.name一列为学名，里面有命名人，则相应的代码为：</p>
-<pre class="r"><code>library(here)
+中保存了Latin.name一列为学名，学名包含命名人，则使用LPSC处理的相应代码为：</p>
+<pre class="r"><code>library(here) # 注意，请先在工作目录创建一个名为.here的空白文件
 library(LPSC)
 library(openxlsx)
 
@@ -462,10 +460,10 @@ res_LPSC_2022_accepted_names &lt;- get_accepted_name(names_to_search)
 
 ## 保存结果
 write.xlsx(res_LPSC_2022_accepted_names, &quot;res_LPSC_2022_accepted_names.xlsx&quot;)</code></pre>
-<p>上述脚本将获得res_LPSC_2022_accepted_names.xlsx文件，其结果第一列表示要查询的学名（不包括命名人），后面则是匹配到的LPSC2022的名称，包括接受名，目、科、属、种，省级分布、文献出处等。</p>
+<p>上述脚本将查询结果保存到res_LPSC_2022_accepted_names.xlsx文件中，该文件第一列表示要查询的学名（不包括命名人），后面则是匹配到的LPSC2022中的名称，包括接受名、目、科、属、种，省级分布、文献出处等。</p>
 <p>若要保存查询过程中的Notes信息，也就是哪些种是异名，可以在Rstudio中将R脚本运行并编译为html
 （Compile Report 按钮）。</p>
-<p>本例子已经上传到：</p>
+<p>本例子已经上传到： <a href="https://github.com/helixcn/ecoinformatics/tree/master/2022-06-14LPSC" class="uri">https://github.com/helixcn/ecoinformatics/tree/master/2022-06-14LPSC</a></p>
 </div>
 </div>
 <div id="lpsc包的函数" class="section level1" number="4">
@@ -474,7 +472,7 @@ write.xlsx(res_LPSC_2022_accepted_names, &quot;res_LPSC_2022_accepted_names.xlsx
 <h2><span class="header-section-number">4.1</span>
 get_accepted_name</h2>
 <p><code>get_accepted_name(x, dat = LPSC::LPSC2022)</code></p>
-<p>用于查询学名、中文种名、中文种下单位的接受名，支持一次查询多个名称。因为用到循环，所以速度较慢。</p>
+<p>用于查询学名、中文种名、中文种下单位的接受名，支持一次查询多个名称。因为用到for循环，所以速度较慢。</p>
 </div>
 <div id="get_accepted_name_one" class="section level2" number="4.2">
 <h2><span class="header-section-number">4.2</span>
@@ -485,8 +483,8 @@ get_accepted_name_one</h2>
 <div id="lpsc2022-数据集" class="section level2" number="4.3">
 <h2><span class="header-section-number">4.3</span> LPSC2022 数据集</h2>
 <p><code>data(&quot;LPSC2022&quot;)</code></p>
-<p>LPSC2022的部分数据，已经转换为二进制，内置在LPSC包中。通过<code>::</code>即可调用。数据的整理方法参见程序包源代码
-（LPSC/R/source_code.R）</p>
+<p>LPSC2022的核心数据，已经转换为二进制，内置在LPSC包中。通过<code>::</code>即可调用。数据的整理方法参见程序包源代码
+（<a href="https://github.com/helixcn/LPSC/tree/main/R/source_code.R" class="uri">https://github.com/helixcn/LPSC/tree/main/R/source_code.R</a>）</p>
 </div>
 <div id="make_taxa_table" class="section level2" number="4.4">
 <h2><span class="header-section-number">4.4</span> make_taxa_table</h2>
@@ -503,22 +501,22 @@ search_canonical_name</h2>
 <div id="search_family" class="section level2" number="4.6">
 <h2><span class="header-section-number">4.6</span> search_family</h2>
 <p><code>search_family(x, dat = LPSC::LPSC2022)</code></p>
-<p>输入拉丁科名，调取某科下面所有条目</p>
+<p>输入拉丁科名，调取某科下的所有条目</p>
 </div>
 <div id="search_family_c" class="section level2" number="4.7">
 <h2><span class="header-section-number">4.7</span> search_family_c</h2>
 <p><code>search_family_c(x, dat = LPSC::LPSC2022)</code></p>
-<p>输入科的中文名，调取该科下面所有条目</p>
+<p>输入科的中文名，调取该科下的所有条目</p>
 </div>
 <div id="search_genus" class="section level2" number="4.8">
 <h2><span class="header-section-number">4.8</span> search_genus</h2>
 <p><code>search_genus(x, dat = LPSC::LPSC2022)</code></p>
-<p>输入属名，调取该属下面所有条目</p>
+<p>输入属名，调取该属下的所有条目</p>
 </div>
 <div id="search_genus_c" class="section level2" number="4.9">
 <h2><span class="header-section-number">4.9</span> search_genus_c</h2>
 <p><code>search_genus_c(x, dat = LPSC::LPSC2022)</code></p>
-<p>输入属的中文名，调取该属下面所有条目</p>
+<p>输入属的中文名，调取该属下的所有条目</p>
 </div>
 <div id="search_infraspecies_c" class="section level2" number="4.10">
 <h2><span class="header-section-number">4.10</span>
@@ -540,32 +538,35 @@ search_species_c</h2>
 <div id="replace" class="section level2" number="4.13">
 <h2><span class="header-section-number">4.13</span> REPLACE</h2>
 <p><code>REPLACE(x)</code></p>
-<p>替换学名内部的多个空格为一个空格，并去掉首尾的多个空格，主要用于学名匹配前的处理</p>
+<p>替换学名内部的多个空格为一个空格，并去掉首尾的空格，主要用于学名匹配前的处理</p>
 </div>
 <div id="cap" class="section level2" number="4.14">
 <h2><span class="header-section-number">4.14</span> Cap</h2>
 <p><code>Cap(x)</code></p>
-<p>将字符串首字母大写，主要用于学名匹配前的处理</p>
+<p>将字符串首字母大写，</p>
 </div>
 </div>
-<div id="引用" class="section level1" number="5">
-<h1><span class="header-section-number">5</span> 引用</h1>
-<p>本程序包能顺利编写成功最重要是中国科学院植物科学数据中心(<a href="https://www.plantplus.cn" class="uri">https://www.plantplus.cn</a>)
-能慷慨分享数据，也要感谢各位分类学家，特别是刘冰博士的贡献。</p>
-<p>引用中国植物物种名录（2022版）的方式为：</p>
+<div id="致谢" class="section level1" number="5">
+<h1><span class="header-section-number">5</span> 致谢</h1>
+<p>感谢中国科学院植物研究所植物科学数据中心(<a href="https://www.plantplus.cn" class="uri">https://www.plantplus.cn</a>)
+分享数据，感谢对本数据库有贡献的植物分类学家，特别是刘冰博士的贡献。</p>
+</div>
+<div id="引用" class="section level1" number="6">
+<h1><span class="header-section-number">6</span> 引用</h1>
+<p>引用《中国植物物种名录》（2022版）：</p>
 <ul>
-<li><p>List of plant species in China (2022 Edition), 2022, Plant Data
-Center of Chinese Academy of Sciences, <a href="DOI:10.12282/plantdata.0061" class="uri">DOI:10.12282/plantdata.0061</a></p></li>
-<li><p>中国植物物种名录（2022版）,(中国科学院植物研究所), 2022,
-中国科学院植物科学数据中心, <a href="DOI:10.12282/plantdata.0061" class="uri">DOI:10.12282/plantdata.0061</a></p></li>
+<li><p>Plant Data Center of Chinese Academy of Sciences (2022) <em>List
+of plant species in China (2022 Edition)</em> <a href="DOI:10.12282/plantdata.0061" class="uri">DOI:10.12282/plantdata.0061</a></p></li>
+<li><p>中国科学院植物研究所植物科学数据中心 (2022)
+<em>中国植物物种名录（2022版）</em> <a href="DOI:10.12282/plantdata.0061" class="uri">DOI:10.12282/plantdata.0061</a></p></li>
 </ul>
-<p>如果觉得LPSC程序包好用，也可以用以下方式引用：</p>
+<p>引用LPSC程序包：</p>
 <ul>
 <li>Zhang J (2022). LPSC: Tools for searching List of plant species in
 China. R package version 0.2.0, <a href="https://github.com/helixcn/LPSC" class="uri">https://github.com/helixcn/LPSC</a>.</li>
 </ul>
-<div id="备注" class="section level2" number="5.1">
-<h2><span class="header-section-number">5.1</span> 备注</h2>
+<div id="备注" class="section level2" number="6.1">
+<h2><span class="header-section-number">6.1</span> 备注</h2>
 <p>如果你还不了解R和Rstudio的使用，可以关注本人的《R语言简明教程》，网址是
 <a href="https://bio-one.org.cn/App/VideoClass/play.html?guid=R-in-brief" class="uri">https://bio-one.org.cn/App/VideoClass/play.html?guid=R-in-brief</a></p>
 </div>
